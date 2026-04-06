@@ -1,15 +1,15 @@
-Ruteando - Optimización de Delivery
-Asignatura: Gestión de Proyectos Informáticos (UV)
+#  Ruteando - Optimización de Delivery
+**Asignatura:** Gestión de Proyectos Informáticos (UV)
 
-Equipo (Scrum Team)
-Scrum Master: Julio Vega
-Product Owner: Sebastian
-Developers: Ignacio & Francisca
+##  Equipo (Scrum Team)
+- **Scrum Master:** Julio Vega
+- **Product Owner:** Sebastian
+- **Developers:** Ignacio & Francisca
 
-Descripción
+## Descripción
 Ruteando es una solución de optimización de rutas dinámicas basada en la API de Google Maps, diseñada para reducir costos operativos en servicios de última milla.
 
-Stack Tecnológico
-Lenguaje: Python (Sugerido para gestión de datos)
-API: Google Maps Platform (Directions & Places)
-Metodología: Agil con Sprints de 2 semanas.
+##  Stack Tecnológico
+- **Lenguaje:** Python (Sugerido para gestión de datos)
+- **API:** Google Maps Platform (Directions & Places)
+- **Metodología:** Scrum con Sprints de 2 semanas.
