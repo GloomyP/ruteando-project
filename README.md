@@ -3,8 +3,8 @@
 
 ##  Equipo (Scrum Team)
 - **Scrum Master:** Julio Vega
-- **Product Owner:** Sebastian
-- **Developers:** Ignacio & Francisca
+- **Product Owner:** Sebastian Rodriguez
+- **Developers:** Ignacio Mendoza & Francisca Meyer
 
 ## Descripción
 Ruteando es una solución de optimización de rutas dinámicas basada en la API de Google Maps, diseñada para reducir costos operativos en servicios de última milla.
