@@ -11,5 +11,5 @@ Ruteando es una solución de optimización de rutas dinámicas basada en la API 
 
 ##  Stack Tecnológico
 - **Lenguaje:** Python (Sugerido para gestión de datos)
-- **API:** Google Maps Platform (Directions & Places)
+- **API:** Aun en investigación
 - **Metodología:** Scrum con Sprints de 2 semanas.
