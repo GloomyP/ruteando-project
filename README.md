@@ -1,15 +1,17 @@
-#  Ruteando - Optimización de Delivery
-**Asignatura:** Gestión de Proyectos Informáticos (UV)
+# ruteando_app
 
-##  Equipo (Scrum Team)
-- **Scrum Master:** Julio Vega
-- **Product Owner:** Sebastian Rodriguez
-- **Developers:** Ignacio Mendoza & Francisca Meyer
+A new Flutter project.
 
-## Descripción
-Ruteando es una solución de optimización de rutas dinámicas basada en la API de Google Maps, diseñada para reducir costos operativos en servicios de última milla.
+## Getting Started
 
-##  Stack Tecnológico
-- **Lenguaje:** Flutter (Sugerido para gestión de datos)
-- **API:** Aun en investigación
-- **Metodología:** Scrum con Sprints de 2 semanas.
+This project is a starting point for a Flutter application.
+
+A few resources to get you started if this is your first Flutter project:
+
+- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
+- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
+- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+
+For help getting started with Flutter development, view the
+[online documentation](https://docs.flutter.dev/), which offers tutorials,
+samples, guidance on mobile development, and a full API reference.
