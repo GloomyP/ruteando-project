@@ -140,6 +140,10 @@ class _PantallaLoginState extends State<PantallaLogin> {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PantallaRegistro()));
   }
 
+  void _abrirCrearContrasena() {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PantallaCrearContrasena()));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -191,12 +195,168 @@ class _PantallaLoginState extends State<PantallaLogin> {
                     style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
                     child: const Text('Registrarme', style: TextStyle(fontSize: 16)),
                   ),
+                  const SizedBox(height: 16),
+                  TextButton(
+                    onPressed: _abrirCrearContrasena,
+                    child: const Text(
+                      '¿Olvidaste tu contraseña? Crear nueva contraseña',
+                      style: TextStyle(color: Colors.green, fontSize: 14),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
                 ],
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+// ==========================================
+// PANTALLA CREAR CONTRASEÑA (Recuperación via enlace por correo)
+// ==========================================
+class PantallaCrearContrasena extends StatefulWidget {
+  const PantallaCrearContrasena({super.key});
+  @override
+  State<PantallaCrearContrasena> createState() => _PantallaCrearContrasenaState();
+}
+
+class _PantallaCrearContrasenaState extends State<PantallaCrearContrasena> {
+  final _formKey = GlobalKey<FormState>();
+  String _email = '';
+  bool _isLoading = false;
+  bool _enviado = false;
+  String? _errorMessage;
+
+  Future<void> _enviarEnlace() async {
+    if (!_formKey.currentState!.validate()) return;
+    _formKey.currentState!.save();
+
+    setState(() { _isLoading = true; _errorMessage = null; });
+
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: _email);
+      setState(() { _enviado = true; _isLoading = false; });
+    } on FirebaseAuthException catch (e) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Error: ${e.message}';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Crear nueva contraseña'),
+        backgroundColor: Colors.green[800],
+        foregroundColor: Colors.white,
+      ),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: _enviado ? _vistaMensajeExito() : _vistaFormulario(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _vistaFormulario() {
+    return Form(
+      key: _formKey,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Icon(Icons.lock_reset, size: 80, color: Colors.green),
+          const SizedBox(height: 24),
+          const Text(
+            'Crear contraseña',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Ingresa tu correo electrónico y te enviaremos un enlace para crear o restablecer tu contraseña.',
+            style: TextStyle(fontSize: 14, color: Colors.grey),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 28),
+          TextFormField(
+            decoration: const InputDecoration(
+              labelText: 'Correo electrónico',
+              prefixIcon: Icon(Icons.email),
+            ),
+            keyboardType: TextInputType.emailAddress,
+            validator: (v) => (v == null || !v.contains('@')) ? 'Ingresa un correo válido' : null,
+            onSaved: (v) => _email = v!.trim(),
+          ),
+          const SizedBox(height: 24),
+          if (_errorMessage != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Text(
+                _errorMessage!,
+                style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          FilledButton.icon(
+            onPressed: _isLoading ? null : _enviarEnlace,
+            icon: _isLoading
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                : const Icon(Icons.send),
+            label: const Text('Enviar enlace', style: TextStyle(fontSize: 16)),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              backgroundColor: Colors.green[700],
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Volver al inicio de sesión'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _vistaMensajeExito() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Icon(Icons.mark_email_read_outlined, size: 90, color: Colors.green),
+        const SizedBox(height: 24),
+        const Text(
+          '¡Enlace enviado!',
+          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Hemos enviado un enlace a $_email.\nRevisa tu bandeja de entrada y sigue las instrucciones para crear tu nueva contraseña.',
+          style: const TextStyle(fontSize: 15, color: Colors.black87),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 32),
+        FilledButton.icon(
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.arrow_back),
+          label: const Text('Volver al inicio de sesión', style: TextStyle(fontSize: 16)),
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            backgroundColor: Colors.green[700],
+          ),
+        ),
+      ],
     );
   }
 }
