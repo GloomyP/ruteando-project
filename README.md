@@ -1,41 +1,51 @@
-#  Ruteando - Optimización de Logística de Última Milla
+# Ruteando - Optimización de Logística de Última Milla
 
-**Ruteando** es una solución móvil diseñada para automatizar y optimizar la planificación de rutas de reparto, específicamente orientada a empresas de agua purificada. El proyecto surge como respuesta a la ineficiencia de los procesos manuales y al constante alza en los costos de combustible.
+Ruteando es una solución móvil diseñada para automatizar y optimizar la planificación de rutas de reparto, específicamente orientada a empresas de agua purificada. El proyecto busca reducir la ineficiencia de los procesos manuales y disminuir los costos operativos relacionados con el consumo de combustible mediante algoritmos de optimización.
 
-##  Equipo de Proyecto (Grupo 12)
+## Equipo de Proyecto - Grupo 12
 
-* **Julio Vega** - Scrum Master (Facilitador de agilidad y gestión técnica)
-* **Sebastián Rodríguez** - Product Owner (Responsable del valor de negocio)
-* **Francisca Meyer** - Developer (Ejecución y desarrollo técnico)
-* **Ignacio Mendoza** - Developer (Ejecución y desarrollo técnico)
+| Integrante | Rol | Responsabilidad Principal |
 
----
-
-##  Sprint Actual: Sprint 1 (Construcción de Base)
-Actualmente nos encontramos en la fase de implementación de la arquitectura base y el sistema de seguridad.
-
-###  Módulo de Acceso (HU08 - Acceso y Registro)
-Para facilitar la revisión y el testing del sistema, se han configurado credenciales de prueba que permiten validar el flujo completo de autenticación.
-
-#### Credenciales de Prueba:
-* **Correo Electrónico:** `admin@ruteando.cl`
-* **Contraseña:** `ruteando2026`
+| Julio Vega | Scrum Master | Gestión de agilidad, procesos y facilitación técnica |
+| Sebastián Rodríguez | Product Owner | Definición de valor de negocio y priorización de backlog |
+| Francisca Meyer | Developer | Desarrollo de interfaz y lógica de aplicación |
+| Ignacio Mendoza | Developer | Desarrollo de interfaz y lógica de aplicación |
 
 ---
 
-##  Casos de Prueba Disponibles
+## Estado del Proyecto: Sprint 1 
 
-El sistema permite validar los siguientes escenarios según los criterios de aceptación definidos:
+El sistema ha pasado de una fase de prototipado estático a una arquitectura conectada con servicios en la nube. Se ha completado la integración de seguridad base.
 
-1.  **Validación de Formato:** El sistema detecta si el texto ingresado no cumple con el estándar de correo electrónico (ej. falta de `@` o dominio).
-2.  **Autenticación Exitosa (Ruta Feliz):** Al ingresar las credenciales mencionadas arriba, el sistema procesa la solicitud (2 seg) y confirma el acceso exitoso.
-3.  **Control de Errores:** Si se ingresan datos incorrectos, el sistema despliega un mensaje de advertencia: *"Credenciales incorrectas"*.
-4.  **Feedback de Usuario:** Se ha implementado un indicador de carga (`CircularProgressIndicator`) para evitar múltiples clics durante la espera de respuesta del servidor.
+### Módulo de Acceso (HU08 - Acceso y Registro)
+La autenticación ahora es gestionada íntegramente por Google Firebase Authentication. El sistema permite el registro de nuevos usuarios y la validación de credenciales existentes contra una base de datos real.
+
+#### Credenciales de Prueba (Testing):
+* Usuario: admin@ruteando.cl
+* Contraseña: ruteando2026
 
 ---
 
-##  Tecnologías Utilizadas
-* **Lenguaje:** Dart
-* **Framework:** Flutter (Multiplataforma)
-* **Control de Versiones:** Git / GitHub
-* **Metodología:** Scrum
+## Guía de Sincronización para Desarrolladores
+
+Para asegurar que el entorno de desarrollo local funcione correctamente con la nueva integración de Firebase, cada integrante debe seguir estos pasos en su terminal:
+
+1. Actualizar repositorio local:
+   git pull origin main
+
+2. Descargar dependencias de Firebase y Flutter:
+   flutter pub get
+
+3. Configuración de Windows (Solo la primera vez):
+   Si el sistema arroja errores de enlaces simbólicos (symlinks), se debe activar el Modo Programador en la configuración de Windows mediante el comando:
+   start ms-settings:developers
+
+---
+
+## Tecnologías y Herramientas
+
+* Lenguaje de programación: Dart
+* Entorno de desarrollo: Flutter Framework
+* Servicios de Backend: Google Firebase (Auth)
+* Control de versiones: Git / GitHub
+* Marco de trabajo: Metodología Scrum
