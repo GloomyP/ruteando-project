@@ -155,11 +155,10 @@ class _PantallaLoginState extends State<PantallaLogin> {
     return PageRouteBuilder<void>(
       pageBuilder: (context, animation, secondaryAnimation) => page,
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        final offsetAnimation =
-            Tween<Offset>(
-              begin: const Offset(1, 0),
-              end: Offset.zero,
-            ).chain(CurveTween(curve: Curves.easeOutCubic)).animate(animation);
+        final offsetAnimation = Tween<Offset>(
+          begin: const Offset(1, 0),
+          end: Offset.zero,
+        ).chain(CurveTween(curve: Curves.easeOutCubic)).animate(animation);
 
         return SlideTransition(position: offsetAnimation, child: child);
       },
@@ -191,9 +190,7 @@ class _PantallaLoginState extends State<PantallaLogin> {
   }
 
   void _abrirRegistro() {
-    Navigator.of(
-      context,
-    ).push(_buildSlideRoute(const PantallaRegistro()));
+    Navigator.of(context).push(_buildSlideRoute(const PantallaRegistro()));
   }
 
   void _abrirCrearContrasena() {
@@ -489,7 +486,8 @@ class PantallaRegistro extends StatefulWidget {
 }
 
 class _PantallaRegistroState extends State<PantallaRegistro> {
-  final _formKey = GlobalKey<FormState>();
+  final _personalFormKey = GlobalKey<FormState>();
+  final _addressFormKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -501,13 +499,22 @@ class _PantallaRegistroState extends State<PantallaRegistro> {
   final _numeroController = TextEditingController();
   final _detallesController = TextEditingController();
   bool _isSaving = false;
+  bool _showAddressStep = false;
+
+  void _goToAddressStep() {
+    if (!_personalFormKey.currentState!.validate()) return;
+    setState(() => _showAddressStep = true);
+  }
+
+  void _goToPersonalStep() {
+    setState(() => _showAddressStep = false);
+  }
 
   Future<void> registerUser() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_addressFormKey.currentState!.validate()) return;
     setState(() => _isSaving = true);
 
     try {
-      // Creamos el usuario real en Firebase
       await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
@@ -522,7 +529,7 @@ class _PantallaRegistroState extends State<PantallaRegistro> {
           backgroundColor: Colors.green,
         ),
       );
-      Navigator.pop(context); // Vuelve al login tras registro exitoso
+      Navigator.pop(context);
     } on FirebaseAuthException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -542,141 +549,196 @@ class _PantallaRegistroState extends State<PantallaRegistro> {
         title: const Text('Registro de usuario'),
         backgroundColor: Colors.green[800],
         foregroundColor: Colors.white,
+        leading: _showAddressStep
+            ? IconButton(
+                onPressed: _goToPersonalStep,
+                icon: const Icon(Icons.arrow_back),
+              )
+            : null,
       ),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 460),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Icon(
-                    Icons.person_add_alt_1,
-                    size: 72,
-                    color: Colors.green,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              transitionBuilder: (child, animation) {
+                final offsetAnimation = Tween<Offset>(
+                  begin: const Offset(0.08, 0),
+                  end: Offset.zero,
+                ).animate(animation);
+
+                return FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(
+                    position: offsetAnimation,
+                    child: child,
                   ),
-                  const SizedBox(height: 24),
-                  TextFormField(
-                    controller: _nameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Nombre completo',
-                      prefixIcon: Icon(Icons.person),
-                    ),
-                    validator: (v) =>
-                        (v == null || v.isEmpty) ? 'Requerido' : null,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _emailController,
-                    decoration: const InputDecoration(
-                      labelText: 'Correo electrónico',
-                      prefixIcon: Icon(Icons.email),
-                    ),
-                    keyboardType: TextInputType.emailAddress,
-                    validator: (v) => (v == null || !v.contains('@'))
-                        ? 'Correo inválido'
-                        : null,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _passwordController,
-                    decoration: const InputDecoration(
-                      labelText: 'Contraseña',
-                      prefixIcon: Icon(Icons.lock),
-                    ),
-                    obscureText: true,
-                    validator: (v) => (v == null || v.length < 6)
-                        ? 'Mínimo 6 caracteres'
-                        : null,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _confirmPasswordController,
-                    decoration: const InputDecoration(
-                      labelText: 'Confirmar contraseña',
-                      prefixIcon: Icon(Icons.lock_outline),
-                    ),
-                    obscureText: true,
-                    validator: (v) => (v != _passwordController.text)
-                        ? 'Las contraseñas no coinciden'
-                        : null,
-                  ),
-                  const SizedBox(height: 24),
-                  const Text(
-                    'Dirección',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _regionController,
-                    decoration: const InputDecoration(
-                      labelText: 'Región',
-                      prefixIcon: Icon(Icons.public),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _comunaController,
-                    decoration: const InputDecoration(
-                      labelText: 'Comuna',
-                      prefixIcon: Icon(Icons.map),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _ciudadController,
-                    decoration: const InputDecoration(
-                      labelText: 'Ciudad',
-                      prefixIcon: Icon(Icons.location_city),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _calleController,
-                    decoration: const InputDecoration(
-                      labelText: 'Calle',
-                      prefixIcon: Icon(Icons.signpost),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _numeroController,
-                    decoration: const InputDecoration(
-                      labelText: 'Número',
-                      prefixIcon: Icon(Icons.pin),
-                    ),
-                    keyboardType: TextInputType.number,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _detallesController,
-                    decoration: const InputDecoration(
-                      labelText: 'Detalles',
-                      prefixIcon: Icon(Icons.notes),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  FilledButton(
-                    onPressed: _isSaving ? null : registerUser,
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      backgroundColor: Colors.green[700],
-                    ),
-                    child: _isSaving
-                        ? const CircularProgressIndicator(color: Colors.white)
-                        : const Text(
-                            'Registrarse',
-                            style: TextStyle(fontSize: 16),
-                          ),
-                  ),
-                ],
-              ),
+                );
+              },
+              child: _showAddressStep
+                  ? _buildAddressStep()
+                  : _buildPersonalInfoStep(),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildPersonalInfoStep() {
+    return Form(
+      key: _personalFormKey,
+      child: Column(
+        key: const ValueKey('personal-step'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Icon(Icons.person_add_alt_1, size: 72, color: Colors.green),
+          const SizedBox(height: 24),
+          const Text(
+            'Información personal',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _nameController,
+            decoration: const InputDecoration(
+              labelText: 'Nombre completo',
+              prefixIcon: Icon(Icons.person),
+            ),
+            validator: (v) => (v == null || v.isEmpty) ? 'Requerido' : null,
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _emailController,
+            decoration: const InputDecoration(
+              labelText: 'Correo electrónico',
+              prefixIcon: Icon(Icons.email),
+            ),
+            keyboardType: TextInputType.emailAddress,
+            validator: (v) =>
+                (v == null || !v.contains('@')) ? 'Correo inválido' : null,
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _passwordController,
+            decoration: const InputDecoration(
+              labelText: 'Contraseña',
+              prefixIcon: Icon(Icons.lock),
+            ),
+            obscureText: true,
+            validator: (v) =>
+                (v == null || v.length < 6) ? 'Mínimo 6 caracteres' : null,
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _confirmPasswordController,
+            decoration: const InputDecoration(
+              labelText: 'Confirmar contraseña',
+              prefixIcon: Icon(Icons.lock_outline),
+            ),
+            obscureText: true,
+            validator: (v) => (v != _passwordController.text)
+                ? 'Las contraseñas no coinciden'
+                : null,
+          ),
+          const SizedBox(height: 24),
+          FilledButton(
+            onPressed: _goToAddressStep,
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              backgroundColor: Colors.green[700],
+            ),
+            child: const Text('Siguiente', style: TextStyle(fontSize: 16)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAddressStep() {
+    return Form(
+      key: _addressFormKey,
+      child: Column(
+        key: const ValueKey('address-step'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Icon(Icons.home_work_outlined, size: 72, color: Colors.green),
+          const SizedBox(height: 24),
+          const Text(
+            'Dirección',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _regionController,
+            decoration: const InputDecoration(
+              labelText: 'Región',
+              prefixIcon: Icon(Icons.public),
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _comunaController,
+            decoration: const InputDecoration(
+              labelText: 'Comuna',
+              prefixIcon: Icon(Icons.map),
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _ciudadController,
+            decoration: const InputDecoration(
+              labelText: 'Ciudad',
+              prefixIcon: Icon(Icons.location_city),
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _calleController,
+            decoration: const InputDecoration(
+              labelText: 'Calle',
+              prefixIcon: Icon(Icons.signpost),
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _numeroController,
+            decoration: const InputDecoration(
+              labelText: 'Número',
+              prefixIcon: Icon(Icons.pin),
+            ),
+            keyboardType: TextInputType.number,
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _detallesController,
+            decoration: const InputDecoration(
+              labelText: 'Detalles',
+              prefixIcon: Icon(Icons.notes),
+            ),
+          ),
+          const SizedBox(height: 24),
+          FilledButton(
+            onPressed: _isSaving ? null : registerUser,
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              backgroundColor: Colors.green[700],
+            ),
+            child: _isSaving
+                ? const CircularProgressIndicator(color: Colors.white)
+                : const Text('Registrarse', style: TextStyle(fontSize: 16)),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton(
+            onPressed: _isSaving ? null : _goToPersonalStep,
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+            child: const Text('Volver', style: TextStyle(fontSize: 16)),
+          ),
+        ],
       ),
     );
   }
