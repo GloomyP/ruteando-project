@@ -19,6 +19,13 @@ void main() {
 
     expect(find.text('Registro de usuario'), findsOneWidget);
     expect(find.text('Nombre completo'), findsOneWidget);
+    expect(find.text('Dirección'), findsOneWidget);
+    expect(find.text('Región'), findsOneWidget);
+    expect(find.text('Comuna'), findsOneWidget);
+    expect(find.text('Ciudad'), findsOneWidget);
+    expect(find.text('Calle'), findsOneWidget);
+    expect(find.text('Número'), findsOneWidget);
+    expect(find.text('Detalles'), findsOneWidget);
     expect(find.text('Registrarse'), findsOneWidget);
     expect(find.byIcon(Icons.person_add_alt_1), findsOneWidget);
   });
