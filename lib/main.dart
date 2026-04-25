@@ -35,10 +35,164 @@ class RuteandoApp extends StatelessWidget {
             );
           }
           if (snapshot.hasData) {
-            return const PantallaDashboard();
+            return const PantallaPrincipal();
           }
           return const PantallaLogin();
         },
+      ),
+    );
+  }
+}
+
+// ==========================================
+// PANTALLA PRINCIPAL CON MENU HAMBURGUESA
+// ==========================================
+class PantallaPrincipal extends StatelessWidget {
+  const PantallaPrincipal({super.key});
+
+  // Usa Navigator para abrir una pantalla simple de modulo pendiente.
+  void _abrirModuloEnDesarrollo(BuildContext context, String titulo) {
+    Navigator.pop(context);
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => PantallaModuloEnDesarrollo(titulo: titulo),
+      ),
+    );
+  }
+
+  // Usa Navigator para abrir la pantalla de seleccion de criterio de rutas.
+  void _abrirRutas(BuildContext context) {
+    Navigator.pop(context);
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => const PantallaCriterioOptimizacion(),
+      ),
+    );
+  }
+
+  Future<void> _cerrarSesion(BuildContext context) async {
+    Navigator.pop(context);
+
+    // Al cerrar sesion, el StreamBuilder principal detecta el cambio y vuelve
+    // automaticamente a la pantalla de login.
+    await FirebaseAuth.instance.signOut();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Ruteando'),
+        backgroundColor: Colors.green[800],
+        foregroundColor: Colors.white,
+      ),
+      drawer: Drawer(
+        child: SafeArea(
+          child: Column(
+            children: [
+              DrawerHeader(
+                margin: EdgeInsets.zero,
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 28,
+                      backgroundColor: Colors.green[100],
+                      child: Icon(
+                        Icons.local_shipping,
+                        color: Colors.green[800],
+                        size: 32,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    const Text(
+                      'Ruteando',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.people_alt_outlined),
+                title: const Text('Repartidores'),
+                onTap: () => _abrirModuloEnDesarrollo(context, 'Repartidores'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.alt_route),
+                title: const Text('Rutas'),
+                onTap: () => _abrirRutas(context),
+              ),
+              ListTile(
+                leading: const Icon(Icons.inventory_2_outlined),
+                title: const Text('Inventario'),
+                onTap: () => _abrirModuloEnDesarrollo(context, 'Inventario'),
+              ),
+              const Spacer(),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.logout),
+                title: const Text('Cerrar sesión'),
+                onTap: () => _cerrarSesion(context),
+              ),
+            ],
+          ),
+        ),
+      ),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.local_shipping, size: 90, color: Colors.green[700]),
+                const SizedBox(height: 24),
+                const Text(
+                  'Bienvenido a Ruteando',
+                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Gestiona tus operaciones de reparto desde aquí',
+                  style: TextStyle(fontSize: 16, color: Colors.black87),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Pantalla reutilizable para modulos que aun no tienen funcionalidad.
+class PantallaModuloEnDesarrollo extends StatelessWidget {
+  const PantallaModuloEnDesarrollo({super.key, required this.titulo});
+
+  final String titulo;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(titulo),
+        backgroundColor: Colors.green[800],
+        foregroundColor: Colors.white,
+      ),
+      body: const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'Módulo en desarrollo',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
+            textAlign: TextAlign.center,
+          ),
+        ),
       ),
     );
   }
@@ -227,13 +381,6 @@ class _PantallaCriterioOptimizacionState
 
     // Simulacion del envio del criterio a consola durante desarrollo.
     debugPrint('Criterio seleccionado: ${opcionSeleccionada.titulo}');
-
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (context) =>
-            PantallaRutaOptimizada(criterio: opcionSeleccionada.titulo),
-      ),
-    );
   }
 
   @override
