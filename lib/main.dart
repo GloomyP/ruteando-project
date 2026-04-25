@@ -70,6 +70,13 @@ class PantallaPrincipal extends StatelessWidget {
     );
   }
 
+  // Abre la pantalla de perfil desde el icono superior derecho.
+  void _abrirPerfil(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (context) => const PantallaPerfil()),
+    );
+  }
+
   Future<void> _cerrarSesion(BuildContext context) async {
     Navigator.pop(context);
 
@@ -85,6 +92,13 @@ class PantallaPrincipal extends StatelessWidget {
         title: const Text('Ruteando'),
         backgroundColor: Colors.green[800],
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            tooltip: 'Perfil',
+            onPressed: () => _abrirPerfil(context),
+            icon: const Icon(Icons.account_circle),
+          ),
+        ],
       ),
       drawer: Drawer(
         child: SafeArea(
@@ -193,6 +207,128 @@ class PantallaModuloEnDesarrollo extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ==========================================
+// PANTALLA PERFIL
+// ==========================================
+class PantallaPerfil extends StatelessWidget {
+  const PantallaPerfil({super.key});
+
+  Future<void> _cerrarSesion(BuildContext context) async {
+    await FirebaseAuth.instance.signOut();
+
+    if (!context.mounted) return;
+
+    // Limpia las pantallas abiertas para dejar visible el login.
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+
+    // Firebase entrega nombre y correo si existen; los otros datos quedan
+    // preparados como placeholders hasta conectar una base de datos de perfil.
+    final nombre = user?.displayName?.trim().isNotEmpty == true
+        ? user!.displayName!
+        : 'Nombre no registrado';
+    final email = user?.email ?? 'Email no registrado';
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Perfil'),
+        backgroundColor: Colors.green[800],
+        foregroundColor: Colors.white,
+      ),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Icon(
+                    Icons.account_circle,
+                    size: 96,
+                    color: Colors.green[700],
+                  ),
+                  const SizedBox(height: 24),
+                  _DatoPerfil(
+                    icono: Icons.person_outline,
+                    etiqueta: 'Name',
+                    valor: nombre,
+                  ),
+                  _DatoPerfil(
+                    icono: Icons.email_outlined,
+                    etiqueta: 'Email',
+                    valor: email,
+                  ),
+                  const _DatoPerfil(
+                    icono: Icons.phone_outlined,
+                    etiqueta: 'Phone',
+                    valor: 'No registrado',
+                  ),
+                  const _DatoPerfil(
+                    icono: Icons.public,
+                    etiqueta: 'Region',
+                    valor: 'No registrada',
+                  ),
+                  const _DatoPerfil(
+                    icono: Icons.map_outlined,
+                    etiqueta: 'Comuna',
+                    valor: 'No registrada',
+                  ),
+                  const _DatoPerfil(
+                    icono: Icons.home_outlined,
+                    etiqueta: 'Address',
+                    valor: 'No registrada',
+                  ),
+                  const SizedBox(height: 24),
+                  FilledButton.icon(
+                    onPressed: () => _cerrarSesion(context),
+                    icon: const Icon(Icons.logout),
+                    label: const Text('Cerrar sesión'),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      backgroundColor: Colors.green[700],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Fila visual reutilizable para los datos del perfil.
+class _DatoPerfil extends StatelessWidget {
+  const _DatoPerfil({
+    required this.icono,
+    required this.etiqueta,
+    required this.valor,
+  });
+
+  final IconData icono;
+  final String etiqueta;
+  final String valor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: ListTile(
+        leading: Icon(icono, color: Colors.green),
+        title: Text(etiqueta),
+        subtitle: Text(valor),
       ),
     );
   }
