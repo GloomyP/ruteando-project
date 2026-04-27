@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'firebase_options.dart'; // Asegúrate de que este archivo exista por el CLI
+import 'firebase_options.dart'; 
+import 'pantalla_ruta.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -517,6 +518,12 @@ class _PantallaCriterioOptimizacionState
 
     // Simulacion del envio del criterio a consola durante desarrollo.
     debugPrint('Criterio seleccionado: ${opcionSeleccionada.titulo}');
+
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => PantallaRuta(criterio: opcionSeleccionada.titulo),
+      ),
+    );
   }
 
   @override
