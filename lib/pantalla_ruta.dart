@@ -5,7 +5,6 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 
 class PantallaRuta extends StatefulWidget {
-  // Recibimos el criterio desde la pantalla anterior si es necesario
   final String? criterio;
   const PantallaRuta({super.key, this.criterio});
 
@@ -16,10 +15,9 @@ class PantallaRuta extends StatefulWidget {
 class _PantallaRutaState extends State<PantallaRuta> {
   late GoogleMapController mapController;
 
-  // Coordenadas de ejemplo en Valparaíso
+  // Coordenadas fijas en Valparaíso para el MVP
   final LatLng _puntoOrigen = const LatLng(-33.0458, -71.6197);
   final LatLng _puntoDestino = const LatLng(-33.0488, -71.6127);
-  // Waypoint intermedio para demostrar la optimización de rutas
   final LatLng _waypoint1 = const LatLng(-33.0465, -71.6150);
 
   String _distanciaTotal = "Calculando...";
@@ -27,6 +25,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
   Set<Polyline> _polylines = {};
   Set<Marker> _markers = {};
 
+  // API Key corregida (W mayúscula y sin caracteres extra)
   final String _googleApiKey = 'AIzaSyCOZU6OnAkzM5ln9yiCWOoEQtbdlWlWURU'; 
 
   @override
@@ -59,21 +58,27 @@ class _PantallaRutaState extends State<PantallaRuta> {
     };
   }
 
-  // CRITERIO 1: Uso de API con optimizeWaypoints: true
   Future<void> _obtenerRutaOptimizada() async {
     String origin = "${_puntoOrigen.latitude},${_puntoOrigen.longitude}";
     String destination = "${_puntoDestino.latitude},${_puntoDestino.longitude}";
     String waypoints = "${_waypoint1.latitude},${_waypoint1.longitude}";
 
-// Construcción de la URL usando un Proxy CORS para que funcione en Web
-    String url = "https://corsproxy.io/?https://maps.googleapis.com/maps/api/directions/json?"
+    // 1. Construcción de la URL de Google
+    String googleUrl = "https://maps.googleapis.com/maps/api/directions/json?"
         "origin=$origin"
         "&destination=$destination"
         "&waypoints=optimize:true|$waypoints" 
         "&key=$_googleApiKey";
 
+    // 2. Uso del proxy AllOrigins para evitar bloqueos de CORS en el navegador
+    String url = "https://api.allorigins.win/raw?url=${Uri.encodeComponent(googleUrl)}";
+
     try {
+      debugPrint("Iniciando petición a Google via AllOrigins...");
       var response = await http.get(Uri.parse(url));
+      
+      debugPrint("RESPUESTA RECIBIDA: ${response.body}");
+
       var json = jsonDecode(response.body);
 
       if (json["status"] == "OK") {
@@ -83,17 +88,14 @@ class _PantallaRutaState extends State<PantallaRuta> {
         int distanciaTotalMetros = 0;
         int tiempoTotalSegundos = 0;
 
-        // Sumamos todos los tramos (legs) ya que hay waypoints
         for (var leg in legs) {
           distanciaTotalMetros += (leg["distance"]["value"] as int);
           tiempoTotalSegundos += (leg["duration"]["value"] as int);
         }
 
-        // Conversión para mostrar en pantalla
         double distKm = distanciaTotalMetros / 1000;
         int tiempoMin = (tiempoTotalSegundos / 60).round();
 
-        // Decodificar la polyline para que la línea siga las calles reales
         PolylinePoints polylinePoints = PolylinePoints();
         List<PointLatLng> result = polylinePoints.decodePolyline(routes["overview_polyline"]["points"]);
         
@@ -105,7 +107,6 @@ class _PantallaRutaState extends State<PantallaRuta> {
         }
 
         setState(() {
-          // CRITERIO 2 y 3: Mostrar tiempo y distancia total
           _distanciaTotal = "${distKm.toStringAsFixed(1)} km";
           _tiempoTotal = "$tiempoMin min";
           
@@ -118,9 +119,13 @@ class _PantallaRutaState extends State<PantallaRuta> {
             ),
           );
         });
+        debugPrint("Cálculos y ruta actualizados correctamente.");
+      } else {
+        debugPrint("GOOGLE STATUS: ${json["status"]}");
+        debugPrint("ERROR: ${json["error_message"] ?? 'Sin detalles'}");
       }
     } catch (e) {
-      debugPrint("Error obteniendo la ruta: $e");
+      debugPrint("Excepción en la petición: $e");
     }
   }
 
@@ -134,7 +139,6 @@ class _PantallaRutaState extends State<PantallaRuta> {
       ),
       body: Stack(
         children: [
-          // CRITERIO 4: Mapa Interactivo
           GoogleMap(
             onMapCreated: (controller) => mapController = controller,
             initialCameraPosition: CameraPosition(
@@ -145,7 +149,6 @@ class _PantallaRutaState extends State<PantallaRuta> {
             polylines: _polylines,
           ),
           
-          // Panel inferior de información
           Positioned(
             bottom: 30,
             left: 20,
