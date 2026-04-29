@@ -11,8 +11,8 @@
 
 ---
 
-## 🚀 Sprint Actual: Sprint 1 (Construcción de Base)
-Actualmente nos encontramos en la fase de implementación de la arquitectura base y el sistema de seguridad.
+## 🚀 Sprint Actual: Sprint 2 (Construcción de Base)
+Actualmente nos encontramos en la fase de implementación de la arquitectura base y el sistema de seguridad. H.U 3 y 4
 
 ### 🔑 Módulo de Acceso (HU08 - Acceso y Registro)
 Para facilitar la revisión y el testing del sistema, se han configurado credenciales de prueba que permiten validar el flujo completo de autenticación.
@@ -38,4 +38,4 @@ El sistema permite validar los siguientes escenarios según los criterios de ace
 * **Lenguaje:** Dart
 * **Framework:** Flutter (Multiplataforma)
 * **Control de Versiones:** Git / GitHub
-* **Metodología:** Scrum
+* **Metodología:** Scrum 
