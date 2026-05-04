@@ -18,25 +18,28 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Registro de usuario'), findsOneWidget);
-    expect(find.text('Informaci?n personal'), findsOneWidget);
+    expect(find.text('Información personal'), findsOneWidget);
     expect(find.text('Nombre completo'), findsOneWidget);
     expect(find.text('Siguiente'), findsOneWidget);
-    expect(find.text('Direcci?n'), findsNothing);
+    expect(find.text('Dirección'), findsNothing);
     expect(find.byIcon(Icons.person_add_alt_1), findsOneWidget);
 
     await tester.enterText(find.byType(TextFormField).at(0), 'Fran Perez');
-    await tester.enterText(find.byType(TextFormField).at(1), 'fran@example.com');
+    await tester.enterText(
+      find.byType(TextFormField).at(1),
+      'fran@example.com',
+    );
     await tester.enterText(find.byType(TextFormField).at(2), '123456');
     await tester.enterText(find.byType(TextFormField).at(3), '123456');
     await tester.tap(find.text('Siguiente'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Direcci?n'), findsOneWidget);
-    expect(find.text('Regi?n'), findsOneWidget);
+    expect(find.text('Dirección'), findsOneWidget);
+    expect(find.text('Región'), findsOneWidget);
     expect(find.text('Comuna'), findsOneWidget);
     expect(find.text('Ciudad'), findsOneWidget);
     expect(find.text('Calle'), findsOneWidget);
-    expect(find.text('N?mero'), findsOneWidget);
+    expect(find.text('Número'), findsOneWidget);
     expect(find.text('Detalles'), findsOneWidget);
     expect(find.text('Registrarse'), findsOneWidget);
   });

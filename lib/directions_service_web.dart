@@ -20,15 +20,21 @@ external JSString get _drivingTravelMode;
 Future<List<RutaGoogle>> obtenerRutasGoogle({
   required String origen,
   required String destino,
+  List<String> paradas = const [],
 }) {
   final completer = Completer<List<RutaGoogle>>();
   final directionsService = _DirectionsService();
+  final waypoints = paradas
+      .map((parada) => <String, Object?>{'location': parada, 'stopover': true})
+      .toList();
   final request =
       <String, Object?>{
             'origin': origen,
             'destination': destino,
             'travelMode': _drivingTravelMode,
-            'provideRouteAlternatives': true,
+            'provideRouteAlternatives': waypoints.isEmpty,
+            if (waypoints.isNotEmpty) 'waypoints': waypoints,
+            if (waypoints.isNotEmpty) 'optimizeWaypoints': true,
           }.jsify()!
           as JSObject;
 
@@ -74,6 +80,14 @@ RutaGoogle _rutaDesdeJavascript(JSObject route) {
         .toDartDouble
         .round();
   }
+  final puntosParadas = legs.length <= 1
+      ? <LatLng>[]
+      : legs.take(legs.length - 1).map((leg) {
+          final endLocation = leg.getProperty<JSObject>('end_location'.toJS);
+          final lat = endLocation.callMethod<JSNumber>('lat'.toJS).toDartDouble;
+          final lng = endLocation.callMethod<JSNumber>('lng'.toJS).toDartDouble;
+          return LatLng(lat, lng);
+        }).toList();
 
   final overviewPath = route
       .getProperty<JSArray<JSObject>>('overview_path'.toJS)
@@ -83,10 +97,17 @@ RutaGoogle _rutaDesdeJavascript(JSObject route) {
     final lng = point.callMethod<JSNumber>('lng'.toJS).toDartDouble;
     return LatLng(lat, lng);
   }).toList();
+  final waypointOrder = route
+      .getProperty<JSArray<JSNumber>?>('waypoint_order'.toJS)
+      ?.toDart
+      .map((index) => index.toDartDouble.round())
+      .toList();
 
   return RutaGoogle(
     distanciaMetros: distanciaMetros,
     duracionSegundos: duracionSegundos,
     puntos: puntos,
+    ordenParadas: waypointOrder ?? const [],
+    puntosParadas: puntosParadas,
   );
 }

@@ -5,11 +5,15 @@ class RutaGoogle {
     required this.distanciaMetros,
     required this.duracionSegundos,
     required this.puntos,
+    this.ordenParadas = const [],
+    this.puntosParadas = const [],
   });
 
   final int distanciaMetros;
   final int duracionSegundos;
   final List<LatLng> puntos;
+  final List<int> ordenParadas;
+  final List<LatLng> puntosParadas;
 
   double get consumoEstimado {
     final distanciaKm = distanciaMetros / 1000;
@@ -21,6 +25,7 @@ class RutaGoogle {
 Future<List<RutaGoogle>> obtenerRutasGoogle({
   required String origen,
   required String destino,
+  List<String> paradas = const [],
 }) {
   throw UnsupportedError(
     'La consulta de rutas en este proyecto esta implementada para web.',
