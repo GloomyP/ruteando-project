@@ -7,6 +7,13 @@ import 'directions_service.dart'
     if (dart.library.js) 'directions_service_web.dart';
 import 'location_service.dart' if (dart.library.js) 'location_service_web.dart';
 
+typedef _ParadaRuta = ({int id, String texto});
+typedef _RutaCandidata = ({
+  RutaGoogle ruta,
+  _ParadaRuta destino,
+  List<_ParadaRuta> paradasIntermedias,
+});
+
 class PantallaRuta extends StatefulWidget {
   final String? criterio;
   const PantallaRuta({super.key, this.criterio});
@@ -28,6 +35,8 @@ class _PantallaRutaState extends State<PantallaRuta> {
   final List<TextEditingController> _paradaControllers = [
     TextEditingController(text: 'Terminal Rodoviario Valparaiso, Chile'),
   ];
+  final List<int> _paradaIds = [0];
+  int _nextParadaId = 1;
 
   GoogleMapController? _mapController;
 
@@ -113,10 +122,14 @@ class _PantallaRutaState extends State<PantallaRuta> {
 
   Future<void> _generarRuta() async {
     final origen = _origenController.text.trim();
-    final paradas = _paradaControllers
-        .map((controller) => controller.text.trim())
-        .where((parada) => parada.isNotEmpty)
-        .toList();
+    final paradas = List<_ParadaRuta>.generate(_paradaControllers.length, (
+      index,
+    ) {
+      return (
+        id: _paradaIds[index],
+        texto: _paradaControllers[index].text.trim(),
+      );
+    }).where((parada) => parada.texto.isNotEmpty).toList();
 
     if (origen.isEmpty || paradas.isEmpty) {
       setState(() {
@@ -183,11 +196,11 @@ class _PantallaRutaState extends State<PantallaRuta> {
             ),
           ),
           Marker(
-            markerId: const MarkerId('destino'),
+            markerId: MarkerId('parada_${rutaCandidata.destino.id}'),
             position: rutaSeleccionada.puntos.last,
             infoWindow: InfoWindow(
               title: 'Parada final',
-              snippet: rutaCandidata.destino,
+              snippet: rutaCandidata.destino.texto,
             ),
             icon: BitmapDescriptor.defaultMarkerWithHue(
               BitmapDescriptor.hueRed,
@@ -209,30 +222,27 @@ class _PantallaRutaState extends State<PantallaRuta> {
     }
   }
 
-  Future<
-    List<({RutaGoogle ruta, String destino, List<String> paradasIntermedias})>
-  >
-  _obtenerRutasCandidatas(String origen, List<String> paradas) async {
+  Future<List<_RutaCandidata>> _obtenerRutasCandidatas(
+    String origen,
+    List<_ParadaRuta> paradas,
+  ) async {
     if (paradas.length == 1) {
       final rutas = await obtenerRutasGoogle(
         origen: origen,
-        destino: paradas.first,
+        destino: paradas.first.texto,
       );
       return rutas
           .map(
             (ruta) => (
               ruta: ruta,
               destino: paradas.first,
-              paradasIntermedias: <String>[],
+              paradasIntermedias: <_ParadaRuta>[],
             ),
           )
           .toList();
     }
 
-    final candidatas =
-        <
-          ({RutaGoogle ruta, String destino, List<String> paradasIntermedias})
-        >[];
+    final candidatas = <_RutaCandidata>[];
     for (var index = 0; index < paradas.length; index++) {
       final destino = paradas[index];
       final paradasIntermedias = [
@@ -241,8 +251,8 @@ class _PantallaRutaState extends State<PantallaRuta> {
       ];
       final rutas = await obtenerRutasGoogle(
         origen: origen,
-        destino: destino,
-        paradas: paradasIntermedias,
+        destino: destino.texto,
+        paradas: paradasIntermedias.map((parada) => parada.texto).toList(),
       );
       candidatas.addAll(
         rutas.map(
@@ -260,7 +270,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
 
   Set<Marker> _crearMarkersParadas(
     RutaGoogle rutaSeleccionada,
-    List<String> paradasIntermedias,
+    List<_ParadaRuta> paradasIntermedias,
   ) {
     final orden = rutaSeleccionada.ordenParadas.isEmpty
         ? List<int>.generate(paradasIntermedias.length, (index) => index)
@@ -273,16 +283,16 @@ class _PantallaRutaState extends State<PantallaRuta> {
       index++
     ) {
       final paradaOriginal = orden[index];
-      final snippet = paradaOriginal < paradasIntermedias.length
+      final parada = paradaOriginal < paradasIntermedias.length
           ? paradasIntermedias[paradaOriginal]
-          : 'Parada ${index + 1}';
+          : null;
       markers.add(
         Marker(
-          markerId: MarkerId('parada_$index'),
+          markerId: MarkerId('parada_${parada?.id ?? 'intermedia_$index'}'),
           position: rutaSeleccionada.puntosParadas[index],
           infoWindow: InfoWindow(
             title: 'Parada ${index + 1}',
-            snippet: snippet,
+            snippet: parada?.texto ?? 'Parada ${index + 1}',
           ),
           icon: BitmapDescriptor.defaultMarkerWithHue(
             BitmapDescriptor.hueAzure,
@@ -297,11 +307,12 @@ class _PantallaRutaState extends State<PantallaRuta> {
   void _agregarParada() {
     setState(() {
       _paradaControllers.add(TextEditingController());
+      _paradaIds.add(_nextParadaId++);
       _estado = 'Nueva parada agregada.';
     });
   }
 
-  void _quitarParada(int index) {
+  Future<void> _quitarParada(int index) async {
     if (_paradaControllers.length == 1) {
       setState(() {
         _estado = 'Debe quedar al menos una parada.';
@@ -309,11 +320,22 @@ class _PantallaRutaState extends State<PantallaRuta> {
       return;
     }
 
+    final teniaRutaCalculada = _polylines.isNotEmpty;
+    final paradaId = _paradaIds.removeAt(index);
     final controller = _paradaControllers.removeAt(index);
     controller.dispose();
     setState(() {
-      _estado = 'Parada eliminada.';
+      _markers = _markers
+          .where((marker) => marker.markerId.value != 'parada_$paradaId')
+          .toSet();
+      _estado = teniaRutaCalculada
+          ? 'Parada eliminada. Recalculando ruta...'
+          : 'Parada eliminada del mapa.';
     });
+
+    if (teniaRutaCalculada) {
+      await _generarRuta();
+    }
   }
 
   RutaGoogle _seleccionarRuta(List<RutaGoogle> rutas) {
