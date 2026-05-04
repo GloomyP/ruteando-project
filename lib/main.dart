@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'firebase_options.dart'; 
+import 'firebase_options.dart';
 import 'pantalla_ruta.dart';
 
 void main() async {
@@ -61,14 +61,12 @@ class PantallaPrincipal extends StatelessWidget {
     );
   }
 
-  // Usa Navigator para abrir la pantalla de seleccion de criterio de rutas.
+  // Abre directamente el mapa; la optimizacion se elige dentro de la ruta.
   void _abrirRutas(BuildContext context) {
     Navigator.pop(context);
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (context) => const PantallaCriterioOptimizacion(),
-      ),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (context) => const PantallaRuta()));
   }
 
   // Abre la pantalla de perfil desde el icono superior derecho.
@@ -420,8 +418,7 @@ class PantallaDashboard extends StatelessWidget {
                       onPressed: () {
                         Navigator.of(context).push(
                           MaterialPageRoute<void>(
-                            builder: (context) =>
-                                const PantallaCriterioOptimizacion(),
+                            builder: (context) => const PantallaRuta(),
                           ),
                         );
                       },
@@ -436,196 +433,6 @@ class PantallaDashboard extends StatelessWidget {
                 ),
               ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ==========================================
-// PANTALLA CRITERIO DE OPTIMIZACION
-// ==========================================
-
-// Enum usado para permitir solo un criterio seleccionado a la vez.
-enum CriterioOptimizacion {
-  tiempoRapido,
-  menorDistancia,
-  menorConsumoCombustible,
-}
-
-// Modelo simple para mostrar cada opcion en la interfaz.
-class OpcionOptimizacion {
-  const OpcionOptimizacion({
-    required this.criterio,
-    required this.titulo,
-    required this.icono,
-  });
-
-  final CriterioOptimizacion criterio;
-  final String titulo;
-  final IconData icono;
-}
-
-class PantallaCriterioOptimizacion extends StatefulWidget {
-  const PantallaCriterioOptimizacion({super.key});
-
-  @override
-  State<PantallaCriterioOptimizacion> createState() =>
-      _PantallaCriterioOptimizacionState();
-}
-
-class _PantallaCriterioOptimizacionState
-    extends State<PantallaCriterioOptimizacion> {
-  CriterioOptimizacion? _criterioSeleccionado;
-
-  // Lista centralizada para construir las 3 opciones solicitadas.
-  final List<OpcionOptimizacion> _opciones = const [
-    OpcionOptimizacion(
-      criterio: CriterioOptimizacion.tiempoRapido,
-      titulo: 'Tiempo más rápido',
-      icono: Icons.speed,
-    ),
-    OpcionOptimizacion(
-      criterio: CriterioOptimizacion.menorDistancia,
-      titulo: 'Menor distancia',
-      icono: Icons.straighten,
-    ),
-    OpcionOptimizacion(
-      criterio: CriterioOptimizacion.menorConsumoCombustible,
-      titulo: 'Menor consumo de combustible',
-      icono: Icons.local_gas_station,
-    ),
-  ];
-
-  void _optimizarRuta() {
-    final criterio = _criterioSeleccionado;
-
-    // Si no hay seleccion, se muestra un mensaje de error visible.
-    if (criterio == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Debes seleccionar un criterio de optimización.'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    final opcionSeleccionada = _opciones.firstWhere(
-      (opcion) => opcion.criterio == criterio,
-    );
-
-    // Simulacion del envio del criterio a consola durante desarrollo.
-    debugPrint('Criterio seleccionado: ${opcionSeleccionada.titulo}');
-
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (context) => PantallaRuta(criterio: opcionSeleccionada.titulo),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Optimización de ruta'),
-        backgroundColor: Colors.green[800],
-        foregroundColor: Colors.white,
-      ),
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 520),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Icon(Icons.alt_route, size: 72, color: Colors.green),
-                  const SizedBox(height: 24),
-                  const Text(
-                    'Selecciona criterio de optimización',
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 24),
-                  Card(
-                    child: RadioGroup<CriterioOptimizacion>(
-                      groupValue: _criterioSeleccionado,
-                      onChanged: (valor) {
-                        setState(() => _criterioSeleccionado = valor);
-                      },
-                      child: Column(
-                        children: _opciones.map((opcion) {
-                          return RadioListTile<CriterioOptimizacion>(
-                            value: opcion.criterio,
-                            secondary: Icon(opcion.icono, color: Colors.green),
-                            title: Text(opcion.titulo),
-                            activeColor: Colors.green[700],
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  FilledButton.icon(
-                    onPressed: _optimizarRuta,
-                    icon: const Icon(Icons.play_arrow),
-                    label: const Text(
-                      'Optimizar Ruta',
-                      style: TextStyle(fontSize: 16),
-                    ),
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      backgroundColor: Colors.green[700],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// Pantalla de destino simple para demostrar que el criterio se envia.
-class PantallaRutaOptimizada extends StatelessWidget {
-  const PantallaRutaOptimizada({super.key, required this.criterio});
-
-  final String criterio;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Ruta optimizada'),
-        backgroundColor: Colors.green[800],
-        foregroundColor: Colors.white,
-      ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.check_circle, size: 80, color: Colors.green),
-              const SizedBox(height: 24),
-              const Text(
-                'Criterio enviado correctamente',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                criterio,
-                style: const TextStyle(fontSize: 18),
-                textAlign: TextAlign.center,
-              ),
-            ],
           ),
         ),
       ),

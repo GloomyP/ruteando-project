@@ -1,9 +1,11 @@
-import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:http/http.dart' as http;
+
+import 'directions_service.dart'
+    if (dart.library.js) 'directions_service_web.dart';
+import 'location_service.dart' if (dart.library.js) 'location_service_web.dart';
 
 class PantallaRuta extends StatefulWidget {
   final String? criterio;
@@ -14,104 +16,53 @@ class PantallaRuta extends StatefulWidget {
 }
 
 class _PantallaRutaState extends State<PantallaRuta> {
-  late GoogleMapController mapController;
+  static const List<String> _criteriosOptimizacion = [
+    'Tiempo mas rapido',
+    'Menor distancia',
+    'Menor consumo de combustible',
+  ];
 
-  // Coordenadas fijas en Valparaiso para el MVP.
-  final LatLng _puntoOrigen = const LatLng(-33.0458, -71.6197);
-  final LatLng _puntoDestino = const LatLng(-33.0488, -71.6127);
-  final LatLng _waypoint1 = const LatLng(-33.0465, -71.6150);
-  final LatLng _waypoint2 = const LatLng(-33.0442, -71.6109);
-  final LatLng _waypoint3 = const LatLng(-33.0508, -71.6171);
+  final TextEditingController _origenController = TextEditingController(
+    text: 'Plaza Sotomayor, Valparaiso, Chile',
+  );
+  final TextEditingController _destinoController = TextEditingController(
+    text: 'Terminal Rodoviario Valparaiso, Chile',
+  );
 
-  String _distanciaTotal = 'Calculando...';
-  String _tiempoTotal = 'Calculando...';
+  GoogleMapController? _mapController;
+
+  String _distanciaTotal = 'Sin ruta';
+  String _tiempoTotal = 'Sin ruta';
   String _estimacionTitulo = 'Estimacion:';
-  String _estimacionValor = 'Calculando...';
+  String _estimacionValor = 'Ingresa origen y destino';
+  String _estado = 'Listo para generar una ruta.';
+  bool _cargando = false;
+  bool _obteniendoUbicacion = false;
+  late String _criterioSeleccionado;
+
   Set<Polyline> _polylines = {};
   Set<Marker> _markers = {};
-
-  // API Key corregida (W mayuscula y sin caracteres extra).
-  final String _googleApiKey = 'AIzaSyCOZU6OnAkzM5ln9yiCWOoEQtbdlWlWURU';
 
   @override
   void initState() {
     super.initState();
-    _configurarMarcadores();
-    _obtenerRutaOptimizada();
+    _criterioSeleccionado = _criteriosOptimizacion.contains(widget.criterio)
+        ? widget.criterio!
+        : _criteriosOptimizacion.first;
   }
 
-  void _configurarMarcadores() {
-    _markers = {
-      Marker(
-        markerId: const MarkerId('origen'),
-        position: _puntoOrigen,
-        infoWindow: const InfoWindow(title: 'Punto de Partida'),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-      ),
-      Marker(
-        markerId: const MarkerId('entrega1'),
-        position: _waypoint1,
-        infoWindow: const InfoWindow(title: 'Visita 1'),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
-      ),
-      Marker(
-        markerId: const MarkerId('entrega2'),
-        position: _waypoint2,
-        infoWindow: const InfoWindow(title: 'Visita 2'),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
-      ),
-      Marker(
-        markerId: const MarkerId('entrega3'),
-        position: _waypoint3,
-        infoWindow: const InfoWindow(title: 'Visita 3'),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
-      ),
-      Marker(
-        markerId: const MarkerId('destino'),
-        position: _puntoDestino,
-        infoWindow: const InfoWindow(title: 'Destino Final'),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-      ),
-    };
+  @override
+  void dispose() {
+    _origenController.dispose();
+    _destinoController.dispose();
+    super.dispose();
   }
 
-  String get _criterioNormalizado => (widget.criterio ?? '').toLowerCase();
-
-  String get _criterioMostrado {
-    if (widget.criterio == null || widget.criterio!.isEmpty) {
-      return 'Tiempo mas rapido';
-    }
-
-    return widget.criterio!;
-  }
+  String get _criterioNormalizado => _criterioSeleccionado.toLowerCase();
 
   bool get _optimizaDistancia => _criterioNormalizado.contains('distancia');
 
   bool get _optimizaCombustible => _criterioNormalizado.contains('combustible');
-
-  List<LatLng> _waypointsPorCriterio() {
-    if (_optimizaDistancia) {
-      return [_waypoint2, _waypoint1, _waypoint3];
-    }
-
-    if (_optimizaCombustible) {
-      return [_waypoint3, _waypoint1, _waypoint2];
-    }
-
-    return [_waypoint1, _waypoint2, _waypoint3];
-  }
-
-  String _parametroWaypoints(List<LatLng> puntos) {
-    final puntosTexto = puntos
-        .map((punto) => '${punto.latitude},${punto.longitude}')
-        .join('|');
-
-    if (_optimizaDistancia || _optimizaCombustible) {
-      return puntosTexto;
-    }
-
-    return 'optimize:true|$puntosTexto';
-  }
 
   Color _colorRuta() {
     if (_optimizaDistancia) {
@@ -125,118 +76,231 @@ class _PantallaRutaState extends State<PantallaRuta> {
     return Colors.blueAccent;
   }
 
-  String _parametrosExtraGoogle() {
+  IconData _iconoEstimacion() {
     if (_optimizaCombustible) {
-      return '&avoid=highways';
+      return Icons.local_gas_station;
     }
 
     if (_optimizaDistancia) {
-      return '&alternatives=true';
+      return Icons.straighten;
     }
 
-    return '';
+    return Icons.speed;
   }
 
-  Map<String, String> _calcularEstimacion(double distKm, int tiempoMin) {
-    if (_optimizaDistancia) {
-      final ahorroDistancia = distKm * 0.08;
-      return {
-        'titulo': 'Ahorro estimado de distancia:',
-        'valor': '${ahorroDistancia.toStringAsFixed(1)} km',
-      };
-    }
-
-    if (_optimizaCombustible) {
-      final litrosEstimados = distKm * 0.11;
-      final ahorroCombustible = litrosEstimados * 0.12;
-      return {
-        'titulo': 'Ahorro estimado de combustible:',
-        'valor': '${ahorroCombustible.toStringAsFixed(2)} L',
-      };
-    }
-
-    final ahorroTiempo = (tiempoMin * 0.10).clamp(1, 999).round();
-    return {
-      'titulo': 'Ahorro estimado de tiempo:',
-      'valor': '$ahorroTiempo min',
-    };
-  }
-
-  Future<void> _obtenerRutaOptimizada() async {
-    String origin = '${_puntoOrigen.latitude},${_puntoOrigen.longitude}';
-    String destination = '${_puntoDestino.latitude},${_puntoDestino.longitude}';
-    String waypoints = _parametroWaypoints(_waypointsPorCriterio());
-
-    String googleUrl =
-        'https://maps.googleapis.com/maps/api/directions/json?'
-        'origin=$origin'
-        '&destination=$destination'
-        '&waypoints=$waypoints'
-        '${_parametrosExtraGoogle()}'
-        '&key=$_googleApiKey';
-
-    String url =
-        'https://api.allorigins.win/raw?url=${Uri.encodeComponent(googleUrl)}';
+  Future<void> _usarUbicacionActual() async {
+    setState(() {
+      _obteniendoUbicacion = true;
+      _estado = 'Solicitando permiso de ubicacion...';
+    });
 
     try {
-      debugPrint('Iniciando peticion a Google via AllOrigins...');
-      var response = await http.get(Uri.parse(url));
-
-      debugPrint('RESPUESTA RECIBIDA: ${response.body}');
-
-      var json = jsonDecode(response.body);
-
-      if (json['status'] == 'OK') {
-        var routes = json['routes'][0];
-        var legs = routes['legs'];
-
-        int distanciaTotalMetros = 0;
-        int tiempoTotalSegundos = 0;
-
-        for (var leg in legs) {
-          distanciaTotalMetros += (leg['distance']['value'] as int);
-          tiempoTotalSegundos += (leg['duration']['value'] as int);
-        }
-
-        double distKm = distanciaTotalMetros / 1000;
-        int tiempoMin = (tiempoTotalSegundos / 60).round();
-        final estimacion = _calcularEstimacion(distKm, tiempoMin);
-
-        PolylinePoints polylinePoints = PolylinePoints();
-        List<PointLatLng> result = polylinePoints.decodePolyline(
-          routes['overview_polyline']['points'],
-        );
-
-        List<LatLng> polylineCoordinates = [];
-        if (result.isNotEmpty) {
-          for (var point in result) {
-            polylineCoordinates.add(LatLng(point.latitude, point.longitude));
-          }
-        }
-
-        setState(() {
-          _distanciaTotal = '${distKm.toStringAsFixed(1)} km';
-          _tiempoTotal = '$tiempoMin min';
-          _estimacionTitulo = estimacion['titulo']!;
-          _estimacionValor = estimacion['valor']!;
-
-          _polylines = {
-            Polyline(
-              polylineId: PolylineId('ruta_${_criterioMostrado.hashCode}'),
-              points: polylineCoordinates,
-              color: _colorRuta(),
-              width: 5,
-            ),
-          };
-        });
-        debugPrint('Calculos y ruta actualizados correctamente.');
-      } else {
-        debugPrint('GOOGLE STATUS: ${json["status"]}');
-        debugPrint('ERROR: ${json["error_message"] ?? "Sin detalles"}');
-      }
+      final ubicacion = await obtenerUbicacionActual();
+      setState(() {
+        _origenController.text = ubicacion.comoOrigenGoogle;
+        _estado = 'Ubicacion actual cargada como origen.';
+        _obteniendoUbicacion = false;
+      });
     } catch (e) {
-      debugPrint('Excepcion en la peticion: $e');
+      setState(() {
+        _estado = 'No se pudo obtener la ubicacion actual: $e';
+        _obteniendoUbicacion = false;
+      });
     }
+  }
+
+  Future<void> _generarRuta() async {
+    final origen = _origenController.text.trim();
+    final destino = _destinoController.text.trim();
+
+    if (origen.isEmpty || destino.isEmpty) {
+      setState(() {
+        _estado = 'Debes ingresar origen y destino.';
+      });
+      return;
+    }
+
+    setState(() {
+      _cargando = true;
+      _estado = 'Consultando Google Directions...';
+      _distanciaTotal = 'Calculando...';
+      _tiempoTotal = 'Calculando...';
+      _estimacionTitulo = 'Estimacion:';
+      _estimacionValor = 'Calculando...';
+    });
+
+    try {
+      final rutas = await obtenerRutasGoogle(origen: origen, destino: destino);
+
+      if (rutas.isEmpty) {
+        setState(() {
+          _estado = 'La respuesta no incluye puntos para dibujar la ruta.';
+          _cargando = false;
+        });
+        return;
+      }
+
+      final rutaSeleccionada = _seleccionarRuta(rutas);
+      final estimacion = _calcularEstimacion(rutaSeleccionada, rutas);
+
+      setState(() {
+        _distanciaTotal =
+            '${(rutaSeleccionada.distanciaMetros / 1000).toStringAsFixed(1)} km';
+        _tiempoTotal =
+            '${(rutaSeleccionada.duracionSegundos / 60).round()} min';
+        _estimacionTitulo = estimacion['titulo']!;
+        _estimacionValor = estimacion['valor']!;
+        _estado = 'Ruta generada con ${rutas.length} alternativa(s).';
+        _cargando = false;
+        _polylines = {
+          Polyline(
+            polylineId: PolylineId(
+              'ruta_${DateTime.now().millisecondsSinceEpoch}',
+            ),
+            points: rutaSeleccionada.puntos,
+            color: _colorRuta(),
+            width: 6,
+          ),
+        };
+        _markers = {
+          Marker(
+            markerId: const MarkerId('origen'),
+            position: rutaSeleccionada.puntos.first,
+            infoWindow: InfoWindow(title: 'Origen', snippet: origen),
+            icon: BitmapDescriptor.defaultMarkerWithHue(
+              BitmapDescriptor.hueGreen,
+            ),
+          ),
+          Marker(
+            markerId: const MarkerId('destino'),
+            position: rutaSeleccionada.puntos.last,
+            infoWindow: InfoWindow(title: 'Destino', snippet: destino),
+            icon: BitmapDescriptor.defaultMarkerWithHue(
+              BitmapDescriptor.hueRed,
+            ),
+          ),
+        };
+      });
+
+      await _ajustarCamara(rutaSeleccionada.puntos);
+    } catch (e) {
+      setState(() {
+        _estado = 'Error consultando la ruta: $e';
+        _cargando = false;
+      });
+    }
+  }
+
+  RutaGoogle _seleccionarRuta(List<RutaGoogle> rutas) {
+    if (_optimizaDistancia) {
+      return rutas.reduce(
+        (actual, siguiente) =>
+            siguiente.distanciaMetros < actual.distanciaMetros
+            ? siguiente
+            : actual,
+      );
+    }
+
+    if (_optimizaCombustible) {
+      return rutas.reduce(
+        (actual, siguiente) =>
+            siguiente.consumoEstimado < actual.consumoEstimado
+            ? siguiente
+            : actual,
+      );
+    }
+
+    return rutas.reduce(
+      (actual, siguiente) =>
+          siguiente.duracionSegundos < actual.duracionSegundos
+          ? siguiente
+          : actual,
+    );
+  }
+
+  Map<String, String> _calcularEstimacion(
+    RutaGoogle rutaSeleccionada,
+    List<RutaGoogle> rutas,
+  ) {
+    final peorRuta = rutas.reduce((actual, siguiente) {
+      if (_optimizaDistancia) {
+        return siguiente.distanciaMetros > actual.distanciaMetros
+            ? siguiente
+            : actual;
+      }
+
+      if (_optimizaCombustible) {
+        return siguiente.consumoEstimado > actual.consumoEstimado
+            ? siguiente
+            : actual;
+      }
+
+      return siguiente.duracionSegundos > actual.duracionSegundos
+          ? siguiente
+          : actual;
+    });
+
+    if (_optimizaDistancia) {
+      final ahorroKm =
+          math.max(
+            0,
+            peorRuta.distanciaMetros - rutaSeleccionada.distanciaMetros,
+          ) /
+          1000;
+      return {
+        'titulo': 'Ahorro estimado de distancia:',
+        'valor': '${ahorroKm.toStringAsFixed(1)} km',
+      };
+    }
+
+    if (_optimizaCombustible) {
+      final ahorroLitros = math.max(
+        0,
+        peorRuta.consumoEstimado - rutaSeleccionada.consumoEstimado,
+      );
+      return {
+        'titulo': 'Ahorro estimado de combustible:',
+        'valor': '${ahorroLitros.toStringAsFixed(2)} L',
+      };
+    }
+
+    final ahorroMin =
+        (math.max(
+                  0,
+                  peorRuta.duracionSegundos - rutaSeleccionada.duracionSegundos,
+                ) /
+                60)
+            .round();
+    return {'titulo': 'Ahorro estimado de tiempo:', 'valor': '$ahorroMin min'};
+  }
+
+  Future<void> _ajustarCamara(List<LatLng> puntos) async {
+    final controller = _mapController;
+    if (controller == null || puntos.isEmpty) {
+      return;
+    }
+
+    double minLat = puntos.first.latitude;
+    double maxLat = puntos.first.latitude;
+    double minLng = puntos.first.longitude;
+    double maxLng = puntos.first.longitude;
+
+    for (final punto in puntos) {
+      minLat = math.min(minLat, punto.latitude);
+      maxLat = math.max(maxLat, punto.latitude);
+      minLng = math.min(minLng, punto.longitude);
+      maxLng = math.max(maxLng, punto.longitude);
+    }
+
+    await controller.animateCamera(
+      CameraUpdate.newLatLngBounds(
+        LatLngBounds(
+          southwest: LatLng(minLat, minLng),
+          northeast: LatLng(maxLat, maxLng),
+        ),
+        72,
+      ),
+    );
   }
 
   @override
@@ -250,156 +314,243 @@ class _PantallaRutaState extends State<PantallaRuta> {
       body: Stack(
         children: [
           GoogleMap(
-            onMapCreated: (controller) => mapController = controller,
+            onMapCreated: (controller) => _mapController = controller,
             initialCameraPosition: const CameraPosition(
               target: LatLng(-33.0458, -71.6197),
-              zoom: 14.5,
+              zoom: 13,
             ),
             markers: _markers,
             polylines: _polylines,
           ),
           Positioned(
-            bottom: 30,
-            left: 20,
-            right: 20,
-            child: Card(
-              elevation: 8,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(15),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            top: 16,
+            left: 12,
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 320),
+                child: Card(
+                  elevation: 8,
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.tune, color: Colors.deepPurple),
-                            SizedBox(width: 8),
-                            Text(
-                              'Criterio:',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
-                              ),
+                        TextField(
+                          controller: _origenController,
+                          textInputAction: TextInputAction.next,
+                          style: const TextStyle(fontSize: 13),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            labelText: 'Origen',
+                            prefixIcon: const Icon(Icons.trip_origin, size: 20),
+                            suffixIcon: IconButton(
+                              tooltip: 'Usar ubicacion actual',
+                              onPressed: _obteniendoUbicacion
+                                  ? null
+                                  : _usarUbicacionActual,
+                              icon: _obteniendoUbicacion
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.my_location, size: 20),
                             ),
-                          ],
+                          ),
                         ),
-                        Flexible(
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _destinoController,
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) => _generarRuta(),
+                          style: const TextStyle(fontSize: 13),
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            labelText: 'Destino',
+                            prefixIcon: Icon(Icons.place, size: 20),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerLeft,
                           child: Text(
-                            _criterioMostrado,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.deepPurple,
+                            _estado,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.grey[700],
+                              fontSize: 11,
                             ),
-                            textAlign: TextAlign.end,
                           ),
                         ),
                       ],
                     ),
-                    const Divider(),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 18,
+            left: 12,
+            child: Align(
+              alignment: Alignment.bottomLeft,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 320),
+                child: Card(
+                  elevation: 8,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.directions_car, color: Colors.green),
-                            SizedBox(width: 8),
-                            Text(
-                              'Distancia Total:',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
+                        DropdownButtonFormField<String>(
+                          initialValue: _criterioSeleccionado,
+                          isDense: true,
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            labelText: 'Optimizacion',
+                            prefixIcon: Icon(Icons.tune, size: 20),
+                          ),
+                          items: _criteriosOptimizacion.map((criterio) {
+                            return DropdownMenuItem<String>(
+                              value: criterio,
+                              child: Text(
+                                criterio,
+                                style: const TextStyle(fontSize: 13),
+                                overflow: TextOverflow.ellipsis,
                               ),
+                            );
+                          }).toList(),
+                          onChanged: _cargando
+                              ? null
+                              : (criterio) {
+                                  if (criterio == null) {
+                                    return;
+                                  }
+
+                                  setState(() {
+                                    _criterioSeleccionado = criterio;
+                                    _estado =
+                                        'Criterio actualizado. Optimiza para recalcular.';
+                                  });
+                                },
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: _cargando ? null : _generarRuta,
+                            icon: _cargando
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.route, size: 18),
+                            label: Text(
+                              _cargando ? 'Optimizando...' : 'Optimizar ruta',
+                              style: const TextStyle(fontSize: 13),
                             ),
-                          ],
-                        ),
-                        Text(
-                          _distanciaTotal,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.green,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Divider(),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.timer, color: Colors.blue),
-                            SizedBox(width: 8),
-                            Text(
-                              'Tiempo Estimado:',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
-                              ),
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size.fromHeight(36),
+                              backgroundColor: Colors.green[700],
                             ),
-                          ],
-                        ),
-                        Text(
-                          _tiempoTotal,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blue,
                           ),
+                        ),
+                        const Divider(height: 12),
+                        _FilaResumen(
+                          icono: Icons.directions_car,
+                          color: Colors.green,
+                          etiqueta: 'Distancia:',
+                          valor: _distanciaTotal,
+                        ),
+                        const Divider(height: 12),
+                        _FilaResumen(
+                          icono: Icons.timer,
+                          color: Colors.blue,
+                          etiqueta: 'Tiempo:',
+                          valor: _tiempoTotal,
+                        ),
+                        const Divider(height: 12),
+                        _FilaResumen(
+                          icono: _iconoEstimacion(),
+                          color: _colorRuta(),
+                          etiqueta: _estimacionTitulo,
+                          valor: _estimacionValor,
                         ),
                       ],
                     ),
-                    const Divider(),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Flexible(
-                          child: Row(
-                            children: [
-                              Icon(
-                                _optimizaCombustible
-                                    ? Icons.local_gas_station
-                                    : _optimizaDistancia
-                                    ? Icons.straighten
-                                    : Icons.speed,
-                                color: _colorRuta(),
-                              ),
-                              const SizedBox(width: 8),
-                              Flexible(
-                                child: Text(
-                                  _estimacionTitulo,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Text(
-                          _estimacionValor,
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: _colorRuta(),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _FilaResumen extends StatelessWidget {
+  const _FilaResumen({
+    required this.icono,
+    required this.color,
+    required this.etiqueta,
+    required this.valor,
+  });
+
+  final IconData icono;
+  final Color color;
+  final String etiqueta;
+  final String valor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Flexible(
+          child: Row(
+            children: [
+              Icon(icono, color: color),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  etiqueta,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+        Flexible(
+          child: Text(
+            valor,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+            textAlign: TextAlign.end,
+          ),
+        ),
+      ],
     );
   }
 }
