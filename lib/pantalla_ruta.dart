@@ -25,16 +25,16 @@ class _PantallaRutaState extends State<PantallaRuta> {
   final TextEditingController _origenController = TextEditingController(
     text: 'Plaza Sotomayor, Valparaiso, Chile',
   );
-  final TextEditingController _destinoController = TextEditingController(
-    text: 'Terminal Rodoviario Valparaiso, Chile',
-  );
+  final List<TextEditingController> _paradaControllers = [
+    TextEditingController(text: 'Terminal Rodoviario Valparaiso, Chile'),
+  ];
 
   GoogleMapController? _mapController;
 
   String _distanciaTotal = 'Sin ruta';
   String _tiempoTotal = 'Sin ruta';
   String _estimacionTitulo = 'Estimacion:';
-  String _estimacionValor = 'Ingresa origen y destino';
+  String _estimacionValor = 'Ingresa origen y paradas';
   String _estado = 'Listo para generar una ruta.';
   bool _cargando = false;
   bool _obteniendoUbicacion = false;
@@ -54,7 +54,9 @@ class _PantallaRutaState extends State<PantallaRuta> {
   @override
   void dispose() {
     _origenController.dispose();
-    _destinoController.dispose();
+    for (final controller in _paradaControllers) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -111,11 +113,14 @@ class _PantallaRutaState extends State<PantallaRuta> {
 
   Future<void> _generarRuta() async {
     final origen = _origenController.text.trim();
-    final destino = _destinoController.text.trim();
+    final paradas = _paradaControllers
+        .map((controller) => controller.text.trim())
+        .where((parada) => parada.isNotEmpty)
+        .toList();
 
-    if (origen.isEmpty || destino.isEmpty) {
+    if (origen.isEmpty || paradas.isEmpty) {
       setState(() {
-        _estado = 'Debes ingresar origen y destino.';
+        _estado = 'Debes ingresar origen y al menos una parada.';
       });
       return;
     }
@@ -130,7 +135,8 @@ class _PantallaRutaState extends State<PantallaRuta> {
     });
 
     try {
-      final rutas = await obtenerRutasGoogle(origen: origen, destino: destino);
+      final rutasCandidatas = await _obtenerRutasCandidatas(origen, paradas);
+      final rutas = rutasCandidatas.map((candidata) => candidata.ruta).toList();
 
       if (rutas.isEmpty) {
         setState(() {
@@ -141,6 +147,9 @@ class _PantallaRutaState extends State<PantallaRuta> {
       }
 
       final rutaSeleccionada = _seleccionarRuta(rutas);
+      final rutaCandidata = rutasCandidatas.firstWhere(
+        (candidata) => candidata.ruta == rutaSeleccionada,
+      );
       final estimacion = _calcularEstimacion(rutaSeleccionada, rutas);
 
       setState(() {
@@ -150,7 +159,9 @@ class _PantallaRutaState extends State<PantallaRuta> {
             '${(rutaSeleccionada.duracionSegundos / 60).round()} min';
         _estimacionTitulo = estimacion['titulo']!;
         _estimacionValor = estimacion['valor']!;
-        _estado = 'Ruta generada con ${rutas.length} alternativa(s).';
+        _estado = rutaCandidata.paradasIntermedias.isEmpty
+            ? 'Ruta generada con 1 parada.'
+            : 'Ruta generada con ${paradas.length} paradas optimizadas.';
         _cargando = false;
         _polylines = {
           Polyline(
@@ -174,10 +185,17 @@ class _PantallaRutaState extends State<PantallaRuta> {
           Marker(
             markerId: const MarkerId('destino'),
             position: rutaSeleccionada.puntos.last,
-            infoWindow: InfoWindow(title: 'Destino', snippet: destino),
+            infoWindow: InfoWindow(
+              title: 'Parada final',
+              snippet: rutaCandidata.destino,
+            ),
             icon: BitmapDescriptor.defaultMarkerWithHue(
               BitmapDescriptor.hueRed,
             ),
+          ),
+          ..._crearMarkersParadas(
+            rutaSeleccionada,
+            rutaCandidata.paradasIntermedias,
           ),
         };
       });
@@ -189,6 +207,113 @@ class _PantallaRutaState extends State<PantallaRuta> {
         _cargando = false;
       });
     }
+  }
+
+  Future<
+    List<({RutaGoogle ruta, String destino, List<String> paradasIntermedias})>
+  >
+  _obtenerRutasCandidatas(String origen, List<String> paradas) async {
+    if (paradas.length == 1) {
+      final rutas = await obtenerRutasGoogle(
+        origen: origen,
+        destino: paradas.first,
+      );
+      return rutas
+          .map(
+            (ruta) => (
+              ruta: ruta,
+              destino: paradas.first,
+              paradasIntermedias: <String>[],
+            ),
+          )
+          .toList();
+    }
+
+    final candidatas =
+        <
+          ({RutaGoogle ruta, String destino, List<String> paradasIntermedias})
+        >[];
+    for (var index = 0; index < paradas.length; index++) {
+      final destino = paradas[index];
+      final paradasIntermedias = [
+        ...paradas.take(index),
+        ...paradas.skip(index + 1),
+      ];
+      final rutas = await obtenerRutasGoogle(
+        origen: origen,
+        destino: destino,
+        paradas: paradasIntermedias,
+      );
+      candidatas.addAll(
+        rutas.map(
+          (ruta) => (
+            ruta: ruta,
+            destino: destino,
+            paradasIntermedias: paradasIntermedias,
+          ),
+        ),
+      );
+    }
+
+    return candidatas;
+  }
+
+  Set<Marker> _crearMarkersParadas(
+    RutaGoogle rutaSeleccionada,
+    List<String> paradasIntermedias,
+  ) {
+    final orden = rutaSeleccionada.ordenParadas.isEmpty
+        ? List<int>.generate(paradasIntermedias.length, (index) => index)
+        : rutaSeleccionada.ordenParadas;
+    final markers = <Marker>{};
+
+    for (
+      var index = 0;
+      index < rutaSeleccionada.puntosParadas.length && index < orden.length;
+      index++
+    ) {
+      final paradaOriginal = orden[index];
+      final snippet = paradaOriginal < paradasIntermedias.length
+          ? paradasIntermedias[paradaOriginal]
+          : 'Parada ${index + 1}';
+      markers.add(
+        Marker(
+          markerId: MarkerId('parada_$index'),
+          position: rutaSeleccionada.puntosParadas[index],
+          infoWindow: InfoWindow(
+            title: 'Parada ${index + 1}',
+            snippet: snippet,
+          ),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueAzure,
+          ),
+        ),
+      );
+    }
+
+    return markers;
+  }
+
+  void _agregarParada() {
+    setState(() {
+      _paradaControllers.add(TextEditingController());
+      _estado = 'Nueva parada agregada.';
+    });
+  }
+
+  void _quitarParada(int index) {
+    if (_paradaControllers.length == 1) {
+      setState(() {
+        _estado = 'Debe quedar al menos una parada.';
+      });
+      return;
+    }
+
+    final controller = _paradaControllers.removeAt(index);
+    controller.dispose();
+    setState(() {
+      _estado = 'Parada eliminada.';
+    });
   }
 
   RutaGoogle _seleccionarRuta(List<RutaGoogle> rutas) {
@@ -328,65 +453,148 @@ class _PantallaRutaState extends State<PantallaRuta> {
             child: Align(
               alignment: Alignment.topCenter,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 320),
+                constraints: BoxConstraints(
+                  maxWidth: 320,
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.58,
+                ),
                 child: Card(
                   elevation: 8,
                   child: Padding(
                     padding: const EdgeInsets.all(10),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        TextField(
-                          controller: _origenController,
-                          textInputAction: TextInputAction.next,
-                          style: const TextStyle(fontSize: 13),
-                          decoration: InputDecoration(
-                            isDense: true,
-                            labelText: 'Origen',
-                            prefixIcon: const Icon(Icons.trip_origin, size: 20),
-                            suffixIcon: IconButton(
-                              tooltip: 'Usar ubicacion actual',
-                              onPressed: _obteniendoUbicacion
-                                  ? null
-                                  : _usarUbicacionActual,
-                              icon: _obteniendoUbicacion
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          TextField(
+                            controller: _origenController,
+                            textInputAction: TextInputAction.next,
+                            style: const TextStyle(fontSize: 13),
+                            decoration: InputDecoration(
+                              isDense: true,
+                              labelText: 'Origen',
+                              prefixIcon: const Icon(
+                                Icons.trip_origin,
+                                size: 20,
+                              ),
+                              suffixIcon: IconButton(
+                                tooltip: 'Usar ubicacion actual',
+                                onPressed: _obteniendoUbicacion
+                                    ? null
+                                    : _usarUbicacionActual,
+                                icon: _obteniendoUbicacion
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.my_location, size: 20),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Theme(
+                            data: Theme.of(
+                              context,
+                            ).copyWith(dividerColor: Colors.transparent),
+                            child: ExpansionTile(
+                              tilePadding: EdgeInsets.zero,
+                              childrenPadding: EdgeInsets.zero,
+                              maintainState: true,
+                              initiallyExpanded: false,
+                              leading: const Icon(Icons.location_on, size: 20),
+                              title: Text(
+                                'Paradas (${_paradaControllers.length})',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              subtitle: const Text(
+                                'Toca para editar la lista',
+                                style: TextStyle(fontSize: 11),
+                              ),
+                              children: [
+                                const SizedBox(height: 8),
+                                ...List.generate(_paradaControllers.length, (
+                                  index,
+                                ) {
+                                  final esUltima =
+                                      index == _paradaControllers.length - 1;
+                                  return Padding(
+                                    padding: EdgeInsets.only(
+                                      bottom: esUltima ? 0 : 8,
+                                    ),
+                                    child: TextField(
+                                      controller: _paradaControllers[index],
+                                      textInputAction: esUltima
+                                          ? TextInputAction.done
+                                          : TextInputAction.next,
+                                      onSubmitted: esUltima
+                                          ? (_) => _generarRuta()
+                                          : null,
+                                      style: const TextStyle(fontSize: 13),
+                                      decoration: InputDecoration(
+                                        isDense: true,
+                                        labelText: 'Parada ${index + 1}',
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 12,
+                                            ),
+                                        prefixIcon: const Icon(
+                                          Icons.place,
+                                          size: 20,
+                                        ),
+                                        suffixIcon: IconButton(
+                                          tooltip: 'Eliminar parada',
+                                          onPressed: _cargando
+                                              ? null
+                                              : () => _quitarParada(index),
+                                          icon: const Icon(
+                                            Icons.remove_circle_outline,
+                                          ),
+                                        ),
                                       ),
-                                    )
-                                  : const Icon(Icons.my_location, size: 20),
+                                    ),
+                                  );
+                                }),
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: _cargando
+                                        ? null
+                                        : _agregarParada,
+                                    icon: const Icon(
+                                      Icons.add_location_alt,
+                                      size: 18,
+                                    ),
+                                    label: const Text(
+                                      'Agregar parada',
+                                      style: TextStyle(fontSize: 13),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: _destinoController,
-                          textInputAction: TextInputAction.done,
-                          onSubmitted: (_) => _generarRuta(),
-                          style: const TextStyle(fontSize: 13),
-                          decoration: const InputDecoration(
-                            isDense: true,
-                            labelText: 'Destino',
-                            prefixIcon: Icon(Icons.place, size: 20),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            _estado,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Colors.grey[700],
-                              fontSize: 11,
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              _estado,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.grey[700],
+                                fontSize: 11,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
