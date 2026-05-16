@@ -1,8 +1,122 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'firebase_options.dart';
 import 'pantalla_ruta.dart';
+
+const _empresaUsuarioLocalKey = 'empresa_vinculada_usuario_local';
+
+String _empresaUsuarioKey() {
+  try {
+    final user = FirebaseAuth.instance.currentUser;
+    final identificador = user?.uid ?? user?.email;
+
+    if (identificador != null && identificador.trim().isNotEmpty) {
+      return 'empresa_vinculada_usuario_$identificador';
+    }
+  } catch (_) {
+    // Los tests de widgets pueden correr sin Firebase inicializado.
+  }
+
+  return _empresaUsuarioLocalKey;
+}
+
+Future<Map<String, String>?> _cargarEmpresaVinculada() async {
+  final prefs = await SharedPreferences.getInstance();
+  final data = prefs.getString(_empresaUsuarioKey());
+
+  if (data == null) {
+    return null;
+  }
+
+  final decoded = jsonDecode(data);
+  if (decoded is! Map<String, dynamic>) {
+    return null;
+  }
+
+  return decoded.map((key, value) => MapEntry(key, value.toString()));
+}
+
+Future<void> _guardarEmpresaVinculada(Map<String, String> empresa) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString(_empresaUsuarioKey(), jsonEncode(empresa));
+}
+
+String _conductoresUsuarioKey() {
+  return 'conductores_${_empresaUsuarioKey()}';
+}
+
+Future<List<Map<String, String>>> _cargarConductoresVinculados() async {
+  final prefs = await SharedPreferences.getInstance();
+  final data = prefs.getString(_conductoresUsuarioKey());
+
+  if (data == null) {
+    return [];
+  }
+
+  final decoded = jsonDecode(data);
+  if (decoded is! List) {
+    return [];
+  }
+
+  return decoded.whereType<Map<String, dynamic>>().map((conductor) {
+    return conductor.map((key, value) => MapEntry(key, value.toString()));
+  }).toList();
+}
+
+Future<void> _guardarConductoresVinculados(
+  List<Map<String, String>> conductores,
+) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString(_conductoresUsuarioKey(), jsonEncode(conductores));
+}
+
+class _RutInputFormatter extends TextInputFormatter {
+  static final _caracteresValidos = RegExp(r'[^0-9kK]');
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final limpio = newValue.text
+        .replaceAll(_caracteresValidos, '')
+        .toUpperCase();
+
+    if (limpio.isEmpty) {
+      return newValue.copyWith(text: '');
+    }
+
+    final limitado = limpio.length > 9 ? limpio.substring(0, 9) : limpio;
+    final formateado = _formatearRut(limitado);
+
+    return TextEditingValue(
+      text: formateado,
+      selection: TextSelection.collapsed(offset: formateado.length),
+    );
+  }
+
+  String _formatearRut(String valor) {
+    if (valor.length <= 1) {
+      return valor;
+    }
+
+    final cuerpo = valor.substring(0, valor.length - 1);
+    final digitoVerificador = valor.substring(valor.length - 1);
+    final grupos = <String>[];
+
+    for (var fin = cuerpo.length; fin > 0; fin -= 3) {
+      final inicio = fin - 3 < 0 ? 0 : fin - 3;
+      grupos.insert(0, cuerpo.substring(inicio, fin));
+    }
+
+    return '${grupos.join('.')}-$digitoVerificador';
+  }
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,7 +131,7 @@ class RuteandoApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Ruteando MVP',
+      title: 'Ruteando',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
@@ -27,6 +141,14 @@ class RuteandoApp extends StatelessWidget {
         ),
       ),
       // StreamBuilder escucha automáticamente si Firebase tiene un usuario activo
+      routes: {
+        '/inicio': (context) => const PantallaPrincipal(),
+        '/repartidores': (context) => const PantallaConductores(),
+        '/rutas': (context) => const PantallaRuta(),
+        '/inventario': (context) =>
+            const PantallaModuloEnDesarrollo(titulo: 'Inventario'),
+        '/empresa': (context) => const PantallaRegistroEmpresa(),
+      },
       home: StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
         builder: (context, snapshot) {
@@ -45,13 +167,116 @@ class RuteandoApp extends StatelessWidget {
   }
 }
 
+Widget _buildMenuDrawer(BuildContext context) {
+  Future<void> cerrarSesion() async {
+    Navigator.pop(context);
+    await FirebaseAuth.instance.signOut();
+  }
+
+  void abrir(Widget pantalla) {
+    Navigator.pop(context);
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute<void>(builder: (context) => pantalla));
+  }
+
+  return Drawer(
+    child: SafeArea(
+      child: Column(
+        children: [
+          DrawerHeader(
+            margin: EdgeInsets.zero,
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 28,
+                  backgroundColor: Colors.green[100],
+                  child: Icon(
+                    Icons.local_shipping,
+                    color: Colors.green[800],
+                    size: 32,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                const Text(
+                  'Ruteando',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.home_outlined),
+            title: const Text('Inicio'),
+            onTap: () => abrir(const PantallaPrincipal()),
+          ),
+          ListTile(
+            leading: const Icon(Icons.people_alt_outlined),
+            title: const Text('Repartidores'),
+            onTap: () => abrir(const PantallaConductores()),
+          ),
+          ListTile(
+            leading: const Icon(Icons.alt_route),
+            title: const Text('Rutas'),
+            onTap: () => abrir(const PantallaRuta()),
+          ),
+          ListTile(
+            leading: const Icon(Icons.inventory_2_outlined),
+            title: const Text('Inventario'),
+            onTap: () =>
+                abrir(const PantallaModuloEnDesarrollo(titulo: 'Inventario')),
+          ),
+          ListTile(
+            leading: const Icon(Icons.business_outlined),
+            title: const Text('Registro de empresa'),
+            onTap: () => abrir(const PantallaRegistroEmpresa()),
+          ),
+          const Spacer(),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.logout),
+            title: const Text('Cerrar sesión'),
+            onTap: cerrarSesion,
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+List<Widget> _accionesPerfil(BuildContext context) {
+  return [
+    IconButton(
+      tooltip: 'Perfil',
+      onPressed: () {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (context) => const PantallaPerfil()),
+        );
+      },
+      icon: const Icon(Icons.account_circle),
+    ),
+  ];
+}
+
 // ==========================================
 // PANTALLA PRINCIPAL CON MENU HAMBURGUESA
 // ==========================================
-class PantallaPrincipal extends StatelessWidget {
+class PantallaPrincipal extends StatefulWidget {
   const PantallaPrincipal({super.key});
 
-  // Usa Navigator para abrir una pantalla simple de modulo pendiente.
+  @override
+  State<PantallaPrincipal> createState() => _PantallaPrincipalState();
+}
+
+class _PantallaPrincipalState extends State<PantallaPrincipal> {
+  late Future<Map<String, String>?> _empresaFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _empresaFuture = _cargarEmpresaVinculada();
+  }
+
   void _abrirModuloEnDesarrollo(BuildContext context, String titulo) {
     Navigator.pop(context);
     Navigator.of(context).push(
@@ -61,7 +286,15 @@ class PantallaPrincipal extends StatelessWidget {
     );
   }
 
-  // Abre directamente el mapa; la optimizacion se elige dentro de la ruta.
+  void _abrirConductores(BuildContext context) {
+    Navigator.pop(context);
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => const PantallaConductores(),
+      ),
+    );
+  }
+
   void _abrirRutas(BuildContext context) {
     Navigator.pop(context);
     Navigator.of(
@@ -69,19 +302,32 @@ class PantallaPrincipal extends StatelessWidget {
     ).push(MaterialPageRoute<void>(builder: (context) => const PantallaRuta()));
   }
 
-  // Abre la pantalla de perfil desde el icono superior derecho.
-  void _abrirPerfil(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (context) => const PantallaPerfil()),
+  Future<void> _abrirRegistroEmpresa(BuildContext context) async {
+    Navigator.pop(context);
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => const PantallaRegistroEmpresa(),
+      ),
     );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _empresaFuture = _cargarEmpresaVinculada();
+    });
   }
 
   Future<void> _cerrarSesion(BuildContext context) async {
     Navigator.pop(context);
-
-    // Al cerrar sesion, el StreamBuilder principal detecta el cambio y vuelve
-    // automaticamente a la pantalla de login.
     await FirebaseAuth.instance.signOut();
+  }
+
+  void _abrirPerfilSuperior(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (context) => const PantallaPerfil()),
+    );
   }
 
   @override
@@ -94,7 +340,7 @@ class PantallaPrincipal extends StatelessWidget {
         actions: [
           IconButton(
             tooltip: 'Perfil',
-            onPressed: () => _abrirPerfil(context),
+            onPressed: () => _abrirPerfilSuperior(context),
             icon: const Icon(Icons.account_circle),
           ),
         ],
@@ -130,7 +376,7 @@ class PantallaPrincipal extends StatelessWidget {
               ListTile(
                 leading: const Icon(Icons.people_alt_outlined),
                 title: const Text('Repartidores'),
-                onTap: () => _abrirModuloEnDesarrollo(context, 'Repartidores'),
+                onTap: () => _abrirConductores(context),
               ),
               ListTile(
                 leading: const Icon(Icons.alt_route),
@@ -141,6 +387,11 @@ class PantallaPrincipal extends StatelessWidget {
                 leading: const Icon(Icons.inventory_2_outlined),
                 title: const Text('Inventario'),
                 onTap: () => _abrirModuloEnDesarrollo(context, 'Inventario'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.business_outlined),
+                title: const Text('Empresa'),
+                onTap: () => _abrirRegistroEmpresa(context),
               ),
               const Spacer(),
               const Divider(height: 1),
@@ -174,10 +425,703 @@ class PantallaPrincipal extends StatelessWidget {
                   style: TextStyle(fontSize: 16, color: Colors.black87),
                   textAlign: TextAlign.center,
                 ),
+                const SizedBox(height: 24),
+                FutureBuilder<Map<String, String>?>(
+                  future: _empresaFuture,
+                  builder: (context, snapshot) {
+                    final empresa = snapshot.data;
+
+                    if (empresa == null) {
+                      return const SizedBox.shrink();
+                    }
+
+                    return _EmpresaVinculadaCard(empresa: empresa);
+                  },
+                ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _EmpresaVinculadaCard extends StatelessWidget {
+  const _EmpresaVinculadaCard({required this.empresa});
+
+  final Map<String, String> empresa;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.business_outlined, color: Colors.green[700]),
+                const SizedBox(width: 8),
+                const Text(
+                  'Empresa vinculada',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _DatoEmpresa(etiqueta: 'Nombre', valor: empresa['nombre'] ?? ''),
+            _DatoEmpresa(etiqueta: 'RUT', valor: empresa['rut'] ?? ''),
+            _DatoEmpresa(etiqueta: 'Correo', valor: empresa['correo'] ?? ''),
+            _DatoEmpresa(
+              etiqueta: 'Telefono',
+              valor: empresa['telefono'] ?? '',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DatoEmpresa extends StatelessWidget {
+  const _DatoEmpresa({required this.etiqueta, required this.valor});
+
+  final String etiqueta;
+  final String valor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 76,
+            child: Text(
+              etiqueta,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          Expanded(child: Text(valor.isEmpty ? 'No registrado' : valor)),
+        ],
+      ),
+    );
+  }
+}
+
+class PantallaConductores extends StatefulWidget {
+  const PantallaConductores({super.key});
+
+  @override
+  State<PantallaConductores> createState() => _PantallaConductoresState();
+}
+
+class _PantallaConductoresState extends State<PantallaConductores> {
+  final _formKey = GlobalKey<FormState>();
+  final _nombreController = TextEditingController();
+  final _rutController = TextEditingController();
+  final _correoController = TextEditingController();
+  final _telefonoController = TextEditingController();
+
+  Map<String, String>? _empresa;
+  List<Map<String, String>> _conductores = [];
+  bool _cargando = true;
+  String? _mensajeError;
+  String? _mensajeExito;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarDatos();
+  }
+
+  @override
+  void dispose() {
+    _nombreController.dispose();
+    _rutController.dispose();
+    _correoController.dispose();
+    _telefonoController.dispose();
+    super.dispose();
+  }
+
+  String? _validarRequerido(String? valor) {
+    if (valor == null || valor.trim().isEmpty) {
+      return 'Campo obligatorio';
+    }
+
+    return null;
+  }
+
+  String? _validarRut(String? valor) {
+    final requerido = _validarRequerido(valor);
+    if (requerido != null) {
+      return requerido;
+    }
+
+    final rutValido = RegExp(
+      r'^\d{1,2}\.\d{3}\.\d{3}-[\dK]$',
+    ).hasMatch(valor!.trim().toUpperCase());
+
+    if (!rutValido) {
+      return 'El RUT debe tener formato XX.XXX.XXX-X o X.XXX.XXX-X';
+    }
+
+    return null;
+  }
+
+  String? _validarCorreo(String? valor) {
+    final requerido = _validarRequerido(valor);
+    if (requerido != null) {
+      return requerido;
+    }
+
+    final correo = valor!.trim();
+    final partes = correo.split('@');
+
+    if (partes.length != 2 ||
+        partes.any((parte) => parte.isEmpty) ||
+        correo.contains(' ')) {
+      return 'Ingresa un correo con un solo dominio valido';
+    }
+
+    final dominioValido = RegExp(
+      r'^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$',
+    ).hasMatch(partes.last);
+
+    if (!dominioValido) {
+      return 'Ingresa un correo con un solo dominio valido';
+    }
+
+    return null;
+  }
+
+  Future<void> _cargarDatos() async {
+    final empresa = await _cargarEmpresaVinculada();
+    final conductores = await _cargarConductoresVinculados();
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _empresa = empresa;
+      _conductores = conductores;
+      _cargando = false;
+    });
+  }
+
+  Future<void> _registrarConductor() async {
+    if (!_formKey.currentState!.validate()) {
+      setState(() {
+        _mensajeError = 'Debe completar todos los campos obligatorios.';
+        _mensajeExito = null;
+      });
+      return;
+    }
+
+    final conductor = {
+      'nombre': _nombreController.text.trim(),
+      'rut': _rutController.text.trim(),
+      'correo': _correoController.text.trim(),
+      'telefono': _telefonoController.text.trim(),
+      'empresa': _empresa?['rut'] ?? _empresaUsuarioKey(),
+    };
+    final conductoresActualizados = [..._conductores, conductor];
+
+    await _guardarConductoresVinculados(conductoresActualizados);
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _conductores = conductoresActualizados;
+      _mensajeError = null;
+      _mensajeExito = 'Conductor registrado correctamente.';
+      _nombreController.clear();
+      _rutController.clear();
+      _correoController.clear();
+      _telefonoController.clear();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Repartidores'),
+        backgroundColor: Colors.green[800],
+        foregroundColor: Colors.white,
+        actions: _accionesPerfil(context),
+      ),
+      drawer: _buildMenuDrawer(context),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: _cargando
+                  ? const Center(child: CircularProgressIndicator())
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Icon(
+                          Icons.people_alt_outlined,
+                          size: 72,
+                          color: Colors.green,
+                        ),
+                        const SizedBox(height: 24),
+                        const Text(
+                          'Registro de conductores',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Empresa: ${_empresa?['nombre'] ?? 'Usuario autenticado'}',
+                          style: const TextStyle(color: Colors.black54),
+                        ),
+                        const SizedBox(height: 16),
+                        _buildFormulario(),
+                        const SizedBox(height: 24),
+                        _buildListaConductores(),
+                      ],
+                    ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFormulario() {
+    return Form(
+      key: _formKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextFormField(
+            controller: _nombreController,
+            decoration: const InputDecoration(
+              labelText: 'Nombre completo',
+              prefixIcon: Icon(Icons.person_outline),
+            ),
+            textInputAction: TextInputAction.next,
+            validator: _validarRequerido,
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _rutController,
+            decoration: const InputDecoration(
+              labelText: 'RUT',
+              prefixIcon: Icon(Icons.badge_outlined),
+            ),
+            inputFormatters: [_RutInputFormatter()],
+            textInputAction: TextInputAction.next,
+            validator: _validarRut,
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _correoController,
+            decoration: const InputDecoration(
+              labelText: 'Correo electronico',
+              prefixIcon: Icon(Icons.email_outlined),
+            ),
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.next,
+            validator: _validarCorreo,
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _telefonoController,
+            decoration: const InputDecoration(
+              labelText: 'Telefono',
+              prefixIcon: Icon(Icons.phone_outlined),
+            ),
+            keyboardType: TextInputType.phone,
+            validator: _validarRequerido,
+          ),
+          const SizedBox(height: 20),
+          if (_mensajeError != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                _mensajeError!,
+                style: const TextStyle(
+                  color: Colors.red,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          if (_mensajeExito != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                _mensajeExito!,
+                style: const TextStyle(
+                  color: Colors.green,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          FilledButton.icon(
+            onPressed: _registrarConductor,
+            icon: const Icon(Icons.save_outlined),
+            label: const Text(
+              'Registrar conductor',
+              style: TextStyle(fontSize: 16),
+            ),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              backgroundColor: Colors.green[700],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildListaConductores() {
+    if (_conductores.isEmpty) {
+      return const Text(
+        'No hay conductores registrados.',
+        textAlign: TextAlign.center,
+        style: TextStyle(color: Colors.black54),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Conductores registrados',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 12),
+        ..._conductores.map((conductor) {
+          return Card(
+            margin: const EdgeInsets.only(bottom: 12),
+            child: ListTile(
+              leading: const Icon(Icons.person_outline, color: Colors.green),
+              title: Text(conductor['nombre'] ?? ''),
+              subtitle: Text(
+                '${conductor['rut'] ?? ''}\n${conductor['correo'] ?? ''}\n${conductor['telefono'] ?? ''}',
+              ),
+              isThreeLine: true,
+            ),
+          );
+        }),
+      ],
+    );
+  }
+}
+
+class PantallaRegistroEmpresa extends StatefulWidget {
+  const PantallaRegistroEmpresa({super.key});
+
+  @override
+  State<PantallaRegistroEmpresa> createState() =>
+      _PantallaRegistroEmpresaState();
+}
+
+class _PantallaRegistroEmpresaState extends State<PantallaRegistroEmpresa> {
+  final _formKey = GlobalKey<FormState>();
+  final _nombreController = TextEditingController();
+  final _rutController = TextEditingController();
+  final _correoController = TextEditingController();
+  final _telefonoController = TextEditingController();
+
+  Map<String, String>? _empresaGuardada;
+  String? _mensajeError;
+  String? _mensajeExito;
+  bool _cargandoEmpresa = true;
+  bool _editandoEmpresa = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarEmpresaRegistrada();
+  }
+
+  @override
+  void dispose() {
+    _nombreController.dispose();
+    _rutController.dispose();
+    _correoController.dispose();
+    _telefonoController.dispose();
+    super.dispose();
+  }
+
+  String? _validarRequerido(String? valor) {
+    if (valor == null || valor.trim().isEmpty) {
+      return 'Campo obligatorio';
+    }
+
+    return null;
+  }
+
+  String? _validarRut(String? valor) {
+    final requerido = _validarRequerido(valor);
+    if (requerido != null) {
+      return requerido;
+    }
+
+    final rutValido = RegExp(
+      r'^\d{1,2}\.\d{3}\.\d{3}-[\dK]$',
+    ).hasMatch(valor!.trim().toUpperCase());
+
+    if (!rutValido) {
+      return 'El RUT debe tener formato XX.XXX.XXX-X o X.XXX.XXX-X';
+    }
+
+    return null;
+  }
+
+  String? _validarCorreo(String? valor) {
+    final requerido = _validarRequerido(valor);
+    if (requerido != null) {
+      return requerido;
+    }
+
+    final correo = valor!.trim();
+    final partes = correo.split('@');
+
+    if (partes.length != 2 ||
+        partes.any((parte) => parte.isEmpty) ||
+        correo.contains(' ')) {
+      return 'Ingresa un correo con un solo dominio valido';
+    }
+
+    final dominioValido = RegExp(
+      r'^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$',
+    ).hasMatch(partes.last);
+
+    if (!dominioValido) {
+      return 'Ingresa un correo con un solo dominio valido';
+    }
+
+    return null;
+  }
+
+  Future<void> _cargarEmpresaRegistrada() async {
+    final empresa = await _cargarEmpresaVinculada();
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _cargandoEmpresa = false;
+      _empresaGuardada = empresa;
+      _editandoEmpresa = false;
+      if (empresa == null) {
+        return;
+      }
+
+      _nombreController.text = empresa['nombre'] ?? '';
+      _rutController.text = empresa['rut'] ?? '';
+      _correoController.text = empresa['correo'] ?? '';
+      _telefonoController.text = empresa['telefono'] ?? '';
+    });
+  }
+
+  Future<void> _registrarEmpresa() async {
+    if (!_formKey.currentState!.validate()) {
+      setState(() {
+        _mensajeError = 'Debe completar todos los campos obligatorios.';
+        _mensajeExito = null;
+      });
+      return;
+    }
+
+    final empresa = {
+      'nombre': _nombreController.text.trim(),
+      'rut': _rutController.text.trim(),
+      'correo': _correoController.text.trim(),
+      'telefono': _telefonoController.text.trim(),
+    };
+
+    await _guardarEmpresaVinculada(empresa);
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      final esActualizacion = _empresaGuardada != null;
+      _empresaGuardada = empresa;
+      _editandoEmpresa = false;
+      _mensajeError = null;
+      _mensajeExito = esActualizacion
+          ? 'Empresa actualizada correctamente.'
+          : 'Empresa registrada correctamente.';
+    });
+  }
+
+  void _editarEmpresa() {
+    setState(() {
+      _editandoEmpresa = true;
+      _mensajeError = null;
+      _mensajeExito = null;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mostrarFormulario = _empresaGuardada == null || _editandoEmpresa;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Registro de empresa'),
+        backgroundColor: Colors.green[800],
+        foregroundColor: Colors.white,
+        actions: _accionesPerfil(context),
+      ),
+      drawer: _buildMenuDrawer(context),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 460),
+              child: _cargandoEmpresa
+                  ? const Center(child: CircularProgressIndicator())
+                  : mostrarFormulario
+                  ? _buildFormularioEmpresa()
+                  : _buildEmpresaRegistrada(),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmpresaRegistrada() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Icon(Icons.business_outlined, size: 72, color: Colors.green),
+        const SizedBox(height: 24),
+        _EmpresaVinculadaCard(empresa: _empresaGuardada!),
+        const SizedBox(height: 16),
+        FilledButton.icon(
+          onPressed: _editarEmpresa,
+          icon: const Icon(Icons.edit_outlined),
+          label: const Text(
+            'Editar informacion',
+            style: TextStyle(fontSize: 16),
+          ),
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            backgroundColor: Colors.green[700],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFormularioEmpresa() {
+    final esEdicion = _empresaGuardada != null;
+
+    return Form(
+      key: _formKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Icon(Icons.business_outlined, size: 72, color: Colors.green),
+          const SizedBox(height: 24),
+          Text(
+            esEdicion ? 'Editar empresa' : 'Datos de la empresa',
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _nombreController,
+            decoration: const InputDecoration(
+              labelText: 'Nombre de empresa',
+              prefixIcon: Icon(Icons.apartment),
+            ),
+            textInputAction: TextInputAction.next,
+            validator: _validarRequerido,
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _rutController,
+            decoration: const InputDecoration(
+              labelText: 'RUT',
+              prefixIcon: Icon(Icons.badge_outlined),
+            ),
+            inputFormatters: [_RutInputFormatter()],
+            textInputAction: TextInputAction.next,
+            validator: _validarRut,
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _correoController,
+            decoration: const InputDecoration(
+              labelText: 'Correo de contacto',
+              prefixIcon: Icon(Icons.email_outlined),
+            ),
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.next,
+            validator: _validarCorreo,
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _telefonoController,
+            decoration: const InputDecoration(
+              labelText: 'Telefono de contacto',
+              prefixIcon: Icon(Icons.phone_outlined),
+            ),
+            keyboardType: TextInputType.phone,
+            validator: _validarRequerido,
+          ),
+          const SizedBox(height: 20),
+          if (_mensajeError != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                _mensajeError!,
+                style: const TextStyle(
+                  color: Colors.red,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          if (_mensajeExito != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                _mensajeExito!,
+                style: const TextStyle(
+                  color: Colors.green,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          FilledButton.icon(
+            onPressed: _registrarEmpresa,
+            icon: const Icon(Icons.save_outlined),
+            label: Text(
+              esEdicion ? 'Guardar cambios' : 'Registrar empresa',
+              style: const TextStyle(fontSize: 16),
+            ),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              backgroundColor: Colors.green[700],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -196,7 +1140,9 @@ class PantallaModuloEnDesarrollo extends StatelessWidget {
         title: Text(titulo),
         backgroundColor: Colors.green[800],
         foregroundColor: Colors.white,
+        actions: _accionesPerfil(context),
       ),
+      drawer: _buildMenuDrawer(context),
       body: const Center(
         child: Padding(
           padding: EdgeInsets.all(24),
@@ -260,17 +1206,17 @@ class PantallaPerfil extends StatelessWidget {
                   const SizedBox(height: 24),
                   _DatoPerfil(
                     icono: Icons.person_outline,
-                    etiqueta: 'Name',
+                    etiqueta: 'Nombre',
                     valor: nombre,
                   ),
                   _DatoPerfil(
                     icono: Icons.email_outlined,
-                    etiqueta: 'Email',
+                    etiqueta: 'Correo',
                     valor: email,
                   ),
                   const _DatoPerfil(
                     icono: Icons.phone_outlined,
-                    etiqueta: 'Phone',
+                    etiqueta: 'Telefono',
                     valor: 'No registrado',
                   ),
                   const _DatoPerfil(
@@ -285,7 +1231,7 @@ class PantallaPerfil extends StatelessWidget {
                   ),
                   const _DatoPerfil(
                     icono: Icons.home_outlined,
-                    etiqueta: 'Address',
+                    etiqueta: 'Direccion',
                     valor: 'No registrada',
                   ),
                   const SizedBox(height: 24),

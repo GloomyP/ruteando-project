@@ -1,11 +1,13 @@
 import 'dart:math' as math;
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'directions_service.dart'
     if (dart.library.js) 'directions_service_web.dart';
 import 'location_service.dart' if (dart.library.js) 'location_service_web.dart';
+import 'pantalla_perfil.dart';
 
 typedef _ParadaRuta = ({int id, String texto});
 typedef _RutaCandidata = ({
@@ -51,6 +53,22 @@ class _PantallaRutaState extends State<PantallaRuta> {
 
   Set<Polyline> _polylines = {};
   Set<Marker> _markers = {};
+
+  Future<void> _cerrarSesion(BuildContext context) async {
+    Navigator.pop(context);
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    await FirebaseAuth.instance.signOut();
+  }
+
+  void _abrirPantalla(BuildContext context, String ruta) {
+    Navigator.pop(context);
+
+    if (ruta == '/rutas') {
+      return;
+    }
+
+    Navigator.of(context).pushReplacementNamed(ruta);
+  }
 
   @override
   void initState() {
@@ -457,6 +475,83 @@ class _PantallaRutaState extends State<PantallaRuta> {
         title: const Text('Ruta Optimizada'),
         backgroundColor: Colors.green[800],
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            tooltip: 'Perfil',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (context) => const PantallaPerfil(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.account_circle),
+          ),
+        ],
+      ),
+      drawer: Drawer(
+        child: SafeArea(
+          child: Column(
+            children: [
+              DrawerHeader(
+                margin: EdgeInsets.zero,
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 28,
+                      backgroundColor: Colors.green[100],
+                      child: Icon(
+                        Icons.local_shipping,
+                        color: Colors.green[800],
+                        size: 32,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    const Text(
+                      'Ruteando',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.home_outlined),
+                title: const Text('Inicio'),
+                onTap: () => _abrirPantalla(context, '/inicio'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.people_alt_outlined),
+                title: const Text('Repartidores'),
+                onTap: () => _abrirPantalla(context, '/repartidores'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.alt_route),
+                title: const Text('Rutas'),
+                onTap: () => _abrirPantalla(context, '/rutas'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.inventory_2_outlined),
+                title: const Text('Inventario'),
+                onTap: () => _abrirPantalla(context, '/inventario'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.business_outlined),
+                title: const Text('Registro de empresa'),
+                onTap: () => _abrirPantalla(context, '/empresa'),
+              ),
+              const Spacer(),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.logout),
+                title: const Text('Cerrar sesiÃ³n'),
+                onTap: () => _cerrarSesion(context),
+              ),
+            ],
+          ),
+        ),
       ),
       body: Stack(
         children: [
