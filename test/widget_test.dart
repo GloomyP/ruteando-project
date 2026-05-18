@@ -150,14 +150,14 @@ void main() {
     expect(find.text('Guardar cambios'), findsNothing);
   });
 
-  testWidgets('registra multiples conductores asociados a la empresa', (
+  testWidgets('registra multiples repartidores asociados a la empresa', (
     WidgetTester tester,
   ) async {
     SharedPreferences.setMockInitialValues({
       'empresa_vinculada_usuario_local': jsonEncode({
-        'nombre': 'Empresa Conductores SpA',
+        'nombre': 'Empresa Repartidores SpA',
         'rut': '76.111.222-3',
-        'correo': 'contacto@conductores.cl',
+        'correo': 'contacto@repartidores.cl',
         'telefono': '+56911112222',
       }),
     });
@@ -165,11 +165,11 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: PantallaConductores()));
     await tester.pumpAndSettle();
 
-    expect(find.text('Registro de conductores'), findsOneWidget);
-    expect(find.text('Empresa: Empresa Conductores SpA'), findsOneWidget);
-    expect(find.text('No hay conductores registrados.'), findsOneWidget);
+    expect(find.text('Registro de repartidores'), findsOneWidget);
+    expect(find.text('Empresa: Empresa Repartidores SpA'), findsOneWidget);
+    expect(find.text('No hay repartidores registrados.'), findsOneWidget);
 
-    await tester.tap(find.text('Registrar conductor'));
+    await tester.tap(find.text('Registrar repartidor'));
     await tester.pump();
 
     expect(
@@ -182,8 +182,8 @@ void main() {
     await tester.enterText(find.byType(TextFormField).at(1), '111111111');
     await tester.enterText(find.byType(TextFormField).at(2), 'juan@test@cl');
     await tester.enterText(find.byType(TextFormField).at(3), '+56911111111');
-    await tester.ensureVisible(find.text('Registrar conductor'));
-    await tester.tap(find.text('Registrar conductor'));
+    await tester.ensureVisible(find.text('Registrar repartidor'));
+    await tester.tap(find.text('Registrar repartidor'));
     await tester.pump();
 
     expect(
@@ -192,25 +192,53 @@ void main() {
     );
 
     await tester.enterText(find.byType(TextFormField).at(2), 'juan@test.cl');
-    await tester.ensureVisible(find.text('Registrar conductor'));
-    await tester.tap(find.text('Registrar conductor'));
+    await tester.ensureVisible(find.text('Registrar repartidor'));
+    await tester.tap(find.text('Registrar repartidor'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Conductor registrado correctamente.'), findsOneWidget);
+    expect(
+      find.text('¿Quieres agregar a esta persona a tu empresa?'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Confirmar'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Persona asociada correctamente a la empresa'),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(seconds: 4));
+    expect(
+      find.text('Persona asociada correctamente a la empresa'),
+      findsNothing,
+    );
     expect(find.text('Juan Perez'), findsOneWidget);
     expect(find.textContaining('11.111.111-1'), findsOneWidget);
-    expect(find.text('No hay conductores registrados.'), findsNothing);
+    expect(find.text('No hay repartidores registrados.'), findsNothing);
+
+    await tester.ensureVisible(find.byTooltip('Editar repartidor'));
+    await tester.tap(find.byTooltip('Editar repartidor'));
+    await tester.pumpAndSettle();
+    expect(find.text('Editar repartidor'), findsOneWidget);
+    expect(find.text('Cambiar rol'), findsOneWidget);
+    await tester.tap(find.text('Cambiar rol'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Guardar cambios'));
+    await tester.pumpAndSettle();
+    expect(find.text('Repartidor actualizado correctamente.'), findsOneWidget);
 
     await tester.enterText(find.byType(TextFormField).at(0), 'Maria Soto');
     await tester.enterText(find.byType(TextFormField).at(1), '222222222');
     await tester.enterText(find.byType(TextFormField).at(2), 'maria@test.cl');
     await tester.enterText(find.byType(TextFormField).at(3), '+56922222222');
-    await tester.ensureVisible(find.text('Registrar conductor'));
-    await tester.tap(find.text('Registrar conductor'));
+    await tester.ensureVisible(find.text('Registrar repartidor'));
+    await tester.tap(find.text('Registrar repartidor'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Confirmar'));
     await tester.pumpAndSettle();
 
     expect(find.text('Juan Perez'), findsOneWidget);
     expect(find.text('Maria Soto'), findsOneWidget);
-    expect(find.text('Conductores registrados'), findsOneWidget);
+    expect(find.text('Repartidores registrados'), findsOneWidget);
   });
 }

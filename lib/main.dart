@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'firebase_options.dart';
 import 'pantalla_ruta.dart';
+import 'roles.dart';
 
 const _empresaUsuarioLocalKey = 'empresa_vinculada_usuario_local';
 
@@ -142,12 +144,24 @@ class RuteandoApp extends StatelessWidget {
       ),
       // StreamBuilder escucha automáticamente si Firebase tiene un usuario activo
       routes: {
-        '/inicio': (context) => const PantallaPrincipal(),
-        '/repartidores': (context) => const PantallaConductores(),
-        '/rutas': (context) => const PantallaRuta(),
-        '/inventario': (context) =>
-            const PantallaModuloEnDesarrollo(titulo: 'Inventario'),
-        '/empresa': (context) => const PantallaRegistroEmpresa(),
+        '/inicio': (context) =>
+            const PantallaProtegidaAdmin(pantalla: PantallaPrincipal()),
+        '/repartidores': (context) =>
+            const PantallaProtegidaAdmin(pantalla: PantallaConductores()),
+        '/rutas': (context) =>
+            const PantallaProtegidaAdmin(pantalla: PantallaRuta()),
+        '/asignacion-rutas': (context) => const PantallaProtegidaAdmin(
+          pantalla: PantallaModuloEnDesarrollo(titulo: 'Asignacion de Ruta'),
+        ),
+        '/monitoreo-entregas': (context) => const PantallaProtegidaAdmin(
+          pantalla: PantallaModuloEnDesarrollo(titulo: 'Monitoreo de Entregas'),
+        ),
+        '/inventario': (context) => const PantallaProtegidaAdmin(
+          pantalla: PantallaModuloEnDesarrollo(titulo: 'Inventario'),
+        ),
+        '/empresa': (context) =>
+            const PantallaProtegidaAdmin(pantalla: PantallaRegistroEmpresa()),
+        '/mi-ruta': (context) => const PantallaRutaAsignada(),
       },
       home: StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
@@ -157,12 +171,50 @@ class RuteandoApp extends StatelessWidget {
               body: Center(child: CircularProgressIndicator()),
             );
           }
-          if (snapshot.hasData) {
-            return const PantallaPrincipal();
+          final user = snapshot.data;
+          if (user != null) {
+            return FutureBuilder<RolUsuario>(
+              future: cargarRolUsuario(user: user),
+              builder: (context, rolSnapshot) {
+                if (rolSnapshot.connectionState == ConnectionState.waiting) {
+                  return const Scaffold(
+                    body: Center(child: CircularProgressIndicator()),
+                  );
+                }
+
+                final rol = rolSnapshot.data ?? RolUsuario.admin;
+                return rol == RolUsuario.repartidor
+                    ? const PantallaRutaAsignada()
+                    : const PantallaPrincipal();
+              },
+            );
           }
           return const PantallaLogin();
         },
       ),
+    );
+  }
+}
+
+class PantallaProtegidaAdmin extends StatelessWidget {
+  const PantallaProtegidaAdmin({super.key, required this.pantalla});
+
+  final Widget pantalla;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<RolUsuario>(
+      future: cargarRolUsuario(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final rol = snapshot.data ?? RolUsuario.admin;
+        return puedeAdministrar(rol) ? pantalla : const PantallaRutaAsignada();
+      },
     );
   }
 }
@@ -180,68 +232,127 @@ Widget _buildMenuDrawer(BuildContext context) {
     ).pushReplacement(MaterialPageRoute<void>(builder: (context) => pantalla));
   }
 
-  return Drawer(
-    child: SafeArea(
-      child: Column(
-        children: [
-          DrawerHeader(
-            margin: EdgeInsets.zero,
-            child: Row(
+  return _DrawerPorRol(abrir: abrir, cerrarSesion: cerrarSesion);
+}
+
+class _DrawerPorRol extends StatelessWidget {
+  const _DrawerPorRol({required this.abrir, required this.cerrarSesion});
+
+  final void Function(Widget pantalla) abrir;
+  final Future<void> Function() cerrarSesion;
+
+  @override
+  Widget build(BuildContext context) {
+    return Drawer(
+      child: SafeArea(
+        child: FutureBuilder<RolUsuario>(
+          future: cargarRolUsuario(),
+          builder: (context, snapshot) {
+            final rol = snapshot.data ?? RolUsuario.admin;
+            final esAdmin = puedeAdministrar(rol);
+
+            return Column(
               children: [
-                CircleAvatar(
-                  radius: 28,
-                  backgroundColor: Colors.green[100],
-                  child: Icon(
-                    Icons.local_shipping,
-                    color: Colors.green[800],
-                    size: 32,
+                DrawerHeader(
+                  margin: EdgeInsets.zero,
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 28,
+                        backgroundColor: Colors.green[100],
+                        child: Icon(
+                          Icons.local_shipping,
+                          color: Colors.green[800],
+                          size: 32,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Text(
+                          'Bienvenido, ${nombreUsuarioActual()}',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 16),
-                const Text(
-                  'Ruteando',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                if (esAdmin) ...[
+                  ListTile(
+                    leading: const Icon(Icons.home_outlined),
+                    title: const Text('Inicio'),
+                    onTap: () => abrir(const PantallaPrincipal()),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.alt_route),
+                    title: const Text('Rutas'),
+                    onTap: () => abrir(const PantallaRuta()),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.assignment_outlined),
+                    title: const Text('Asignacion de Ruta'),
+                    onTap: () => abrir(
+                      const PantallaModuloEnDesarrollo(
+                        titulo: 'Asignacion de Ruta',
+                      ),
+                    ),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.monitor_heart_outlined),
+                    title: const Text('Monitoreo de Entregas'),
+                    onTap: () => abrir(
+                      const PantallaModuloEnDesarrollo(
+                        titulo: 'Monitoreo de Entregas',
+                      ),
+                    ),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.people_alt_outlined),
+                    title: const Text('Repartidores'),
+                    onTap: () => abrir(const PantallaConductores()),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.inventory_2_outlined),
+                    title: const Text('Inventario'),
+                    onTap: () => abrir(
+                      const PantallaModuloEnDesarrollo(titulo: 'Inventario'),
+                    ),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.business_outlined),
+                    title: const Text('Empresas'),
+                    onTap: () => abrir(const PantallaRegistroEmpresa()),
+                  ),
+                ] else ...[
+                  ListTile(
+                    leading: const Icon(Icons.route_outlined),
+                    title: const Text('Mi ruta asignada'),
+                    onTap: () => abrir(const PantallaRutaAsignada()),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.fact_check_outlined),
+                    title: const Text('Estado de entregas'),
+                    onTap: () => abrir(const PantallaRutaAsignada()),
+                  ),
+                ],
+                const Spacer(),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.logout),
+                  title: const Text('Cerrar sesion'),
+                  onTap: cerrarSesion,
                 ),
               ],
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.home_outlined),
-            title: const Text('Inicio'),
-            onTap: () => abrir(const PantallaPrincipal()),
-          ),
-          ListTile(
-            leading: const Icon(Icons.people_alt_outlined),
-            title: const Text('Repartidores'),
-            onTap: () => abrir(const PantallaConductores()),
-          ),
-          ListTile(
-            leading: const Icon(Icons.alt_route),
-            title: const Text('Rutas'),
-            onTap: () => abrir(const PantallaRuta()),
-          ),
-          ListTile(
-            leading: const Icon(Icons.inventory_2_outlined),
-            title: const Text('Inventario'),
-            onTap: () =>
-                abrir(const PantallaModuloEnDesarrollo(titulo: 'Inventario')),
-          ),
-          ListTile(
-            leading: const Icon(Icons.business_outlined),
-            title: const Text('Registro de empresa'),
-            onTap: () => abrir(const PantallaRegistroEmpresa()),
-          ),
-          const Spacer(),
-          const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.logout),
-            title: const Text('Cerrar sesión'),
-            onTap: cerrarSesion,
-          ),
-        ],
+            );
+          },
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 List<Widget> _accionesPerfil(BuildContext context) {
@@ -363,25 +474,48 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                       ),
                     ),
                     const SizedBox(width: 16),
-                    const Text(
-                      'Ruteando',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
+                    Expanded(
+                      child: Text(
+                        'Bienvenido, ${nombreUsuarioActual()}',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
                 ),
               ),
               ListTile(
-                leading: const Icon(Icons.people_alt_outlined),
-                title: const Text('Repartidores'),
-                onTap: () => _abrirConductores(context),
+                leading: const Icon(Icons.home_outlined),
+                title: const Text('Inicio'),
+                onTap: () {
+                  Navigator.pop(context);
+                },
               ),
               ListTile(
                 leading: const Icon(Icons.alt_route),
                 title: const Text('Rutas'),
                 onTap: () => _abrirRutas(context),
+              ),
+              ListTile(
+                leading: const Icon(Icons.assignment_outlined),
+                title: const Text('Asignacion de Ruta'),
+                onTap: () =>
+                    _abrirModuloEnDesarrollo(context, 'Asignacion de Ruta'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.monitor_heart_outlined),
+                title: const Text('Monitoreo de Entregas'),
+                onTap: () =>
+                    _abrirModuloEnDesarrollo(context, 'Monitoreo de Entregas'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.people_alt_outlined),
+                title: const Text('Repartidores'),
+                onTap: () => _abrirConductores(context),
               ),
               ListTile(
                 leading: const Icon(Icons.inventory_2_outlined),
@@ -390,7 +524,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
               ),
               ListTile(
                 leading: const Icon(Icons.business_outlined),
-                title: const Text('Empresa'),
+                title: const Text('Empresas'),
                 onTap: () => _abrirRegistroEmpresa(context),
               ),
               const Spacer(),
@@ -525,6 +659,7 @@ class _PantallaConductoresState extends State<PantallaConductores> {
   final _rutController = TextEditingController();
   final _correoController = TextEditingController();
   final _telefonoController = TextEditingController();
+  Timer? _mensajeExitoTimer;
 
   Map<String, String>? _empresa;
   List<Map<String, String>> _conductores = [];
@@ -540,11 +675,32 @@ class _PantallaConductoresState extends State<PantallaConductores> {
 
   @override
   void dispose() {
+    _mensajeExitoTimer?.cancel();
     _nombreController.dispose();
     _rutController.dispose();
     _correoController.dispose();
     _telefonoController.dispose();
     super.dispose();
+  }
+
+  void _mostrarMensajeExitoTemporal(String mensaje) {
+    _mensajeExitoTimer?.cancel();
+    setState(() {
+      _mensajeError = null;
+      _mensajeExito = mensaje;
+    });
+
+    _mensajeExitoTimer = Timer(const Duration(seconds: 3), () {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        if (_mensajeExito == mensaje) {
+          _mensajeExito = null;
+        }
+      });
+    });
   }
 
   String? _validarRequerido(String? valor) {
@@ -628,7 +784,33 @@ class _PantallaConductoresState extends State<PantallaConductores> {
       'correo': _correoController.text.trim(),
       'telefono': _telefonoController.text.trim(),
       'empresa': _empresa?['rut'] ?? _empresaUsuarioKey(),
+      'rol': RolUsuario.repartidor.valor,
     };
+
+    final confirmarAsociacion = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Asociar persona'),
+          content: const Text('¿Quieres agregar a esta persona a tu empresa?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Confirmar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmarAsociacion != true) {
+      return;
+    }
+
     final conductoresActualizados = [..._conductores, conductor];
 
     await _guardarConductoresVinculados(conductoresActualizados);
@@ -639,13 +821,158 @@ class _PantallaConductoresState extends State<PantallaConductores> {
 
     setState(() {
       _conductores = conductoresActualizados;
-      _mensajeError = null;
-      _mensajeExito = 'Conductor registrado correctamente.';
       _nombreController.clear();
       _rutController.clear();
       _correoController.clear();
       _telefonoController.clear();
     });
+    _mostrarMensajeExitoTemporal('Persona asociada correctamente a la empresa');
+  }
+
+  Future<void> _editarRepartidor(int index) async {
+    final repartidor = _conductores[index];
+    final nombreController = TextEditingController(
+      text: repartidor['nombre'] ?? '',
+    );
+    final rutController = TextEditingController(text: repartidor['rut'] ?? '');
+    final correoController = TextEditingController(
+      text: repartidor['correo'] ?? '',
+    );
+    final telefonoController = TextEditingController(
+      text: repartidor['telefono'] ?? '',
+    );
+    final formKey = GlobalKey<FormState>();
+    var rolSeleccionado = RolUsuario.desdeValor(repartidor['rol']);
+
+    final repartidorActualizado = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Editar repartidor'),
+              content: SingleChildScrollView(
+                child: Form(
+                  key: formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextFormField(
+                        controller: nombreController,
+                        decoration: const InputDecoration(
+                          labelText: 'Nombre completo',
+                        ),
+                        validator: _validarRequerido,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: rutController,
+                        decoration: const InputDecoration(labelText: 'RUT'),
+                        inputFormatters: [_RutInputFormatter()],
+                        validator: _validarRut,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: correoController,
+                        decoration: const InputDecoration(
+                          labelText: 'Correo electronico',
+                        ),
+                        keyboardType: TextInputType.emailAddress,
+                        validator: _validarCorreo,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: telefonoController,
+                        decoration: const InputDecoration(
+                          labelText: 'Telefono',
+                        ),
+                        keyboardType: TextInputType.phone,
+                        validator: _validarRequerido,
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<RolUsuario>(
+                        initialValue: rolSeleccionado,
+                        isExpanded: true,
+                        decoration: const InputDecoration(labelText: 'Rol'),
+                        items: RolUsuario.values.map((rol) {
+                          return DropdownMenuItem<RolUsuario>(
+                            value: rol,
+                            child: Text(rol.etiqueta),
+                          );
+                        }).toList(),
+                        onChanged: (rol) {
+                          if (rol == null) {
+                            return;
+                          }
+
+                          setDialogState(() => rolSeleccionado = rol);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            setDialogState(() {
+                              rolSeleccionado =
+                                  rolSeleccionado == RolUsuario.admin
+                                  ? RolUsuario.repartidor
+                                  : RolUsuario.admin;
+                            });
+                          },
+                          icon: const Icon(Icons.swap_horiz),
+                          label: const Text('Cambiar rol'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    if (!formKey.currentState!.validate()) {
+                      return;
+                    }
+
+                    Navigator.of(dialogContext).pop({
+                      'nombre': nombreController.text.trim(),
+                      'rut': rutController.text.trim(),
+                      'correo': correoController.text.trim(),
+                      'telefono': telefonoController.text.trim(),
+                      'empresa': repartidor['empresa'] ?? _empresaUsuarioKey(),
+                      'rol': rolSeleccionado.valor,
+                    });
+                  },
+                  child: const Text('Guardar cambios'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (repartidorActualizado == null) {
+      return;
+    }
+
+    final repartidoresActualizados = [..._conductores];
+    repartidoresActualizados[index] = repartidorActualizado;
+    await _guardarConductoresVinculados(repartidoresActualizados);
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _conductores = repartidoresActualizados;
+    });
+    _mostrarMensajeExitoTemporal('Repartidor actualizado correctamente.');
   }
 
   @override
@@ -676,7 +1003,7 @@ class _PantallaConductoresState extends State<PantallaConductores> {
                         ),
                         const SizedBox(height: 24),
                         const Text(
-                          'Registro de conductores',
+                          'Registro de repartidores',
                           style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.w600,
@@ -776,7 +1103,7 @@ class _PantallaConductoresState extends State<PantallaConductores> {
             onPressed: _registrarConductor,
             icon: const Icon(Icons.save_outlined),
             label: const Text(
-              'Registrar conductor',
+              'Registrar repartidor',
               style: TextStyle(fontSize: 16),
             ),
             style: FilledButton.styleFrom(
@@ -792,7 +1119,7 @@ class _PantallaConductoresState extends State<PantallaConductores> {
   Widget _buildListaConductores() {
     if (_conductores.isEmpty) {
       return const Text(
-        'No hay conductores registrados.',
+        'No hay repartidores registrados.',
         textAlign: TextAlign.center,
         style: TextStyle(color: Colors.black54),
       );
@@ -802,20 +1129,27 @@ class _PantallaConductoresState extends State<PantallaConductores> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const Text(
-          'Conductores registrados',
+          'Repartidores registrados',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 12),
-        ..._conductores.map((conductor) {
+        ..._conductores.asMap().entries.map((entry) {
+          final index = entry.key;
+          final conductor = entry.value;
           return Card(
             margin: const EdgeInsets.only(bottom: 12),
             child: ListTile(
               leading: const Icon(Icons.person_outline, color: Colors.green),
               title: Text(conductor['nombre'] ?? ''),
               subtitle: Text(
-                '${conductor['rut'] ?? ''}\n${conductor['correo'] ?? ''}\n${conductor['telefono'] ?? ''}',
+                '${conductor['rut'] ?? ''}\n${conductor['correo'] ?? ''}\n${conductor['telefono'] ?? ''}\nRol: ${conductor['rol'] ?? RolUsuario.repartidor.valor}',
               ),
               isThreeLine: true,
+              trailing: IconButton(
+                tooltip: 'Editar repartidor',
+                onPressed: () => _editarRepartidor(index),
+                icon: const Icon(Icons.edit_outlined),
+              ),
             ),
           );
         }),
@@ -1122,6 +1456,155 @@ class _PantallaRegistroEmpresaState extends State<PantallaRegistroEmpresa> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class PantallaRutaAsignada extends StatefulWidget {
+  const PantallaRutaAsignada({super.key});
+
+  @override
+  State<PantallaRutaAsignada> createState() => _PantallaRutaAsignadaState();
+}
+
+class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
+  static const _estados = ['Pendiente', 'En camino', 'Entregado'];
+  static const _entregasBase = [
+    'Retiro en bodega central',
+    'Entrega cliente 1',
+    'Entrega cliente 2',
+  ];
+
+  late Future<List<String>> _estadosFuture;
+
+  String get _keyEstados {
+    final user = FirebaseAuth.instance.currentUser;
+    final identificador = user?.uid ?? user?.email ?? 'local';
+    return 'estados_entregas_$identificador';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _estadosFuture = _cargarEstados();
+  }
+
+  Future<List<String>> _cargarEstados() async {
+    final prefs = await SharedPreferences.getInstance();
+    return List<String>.generate(_entregasBase.length, (index) {
+      return prefs.getString('${_keyEstados}_$index') ?? _estados.first;
+    });
+  }
+
+  Future<void> _actualizarEstado(int index, String estado) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('${_keyEstados}_$index', estado);
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _estadosFuture = _cargarEstados();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Mi ruta asignada'),
+        backgroundColor: Colors.green[800],
+        foregroundColor: Colors.white,
+        actions: _accionesPerfil(context),
+      ),
+      drawer: _buildMenuDrawer(context),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: FutureBuilder<List<String>>(
+                future: _estadosFuture,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  final estados =
+                      snapshot.data ??
+                      List<String>.filled(_entregasBase.length, _estados.first);
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Icon(
+                        Icons.route_outlined,
+                        size: 72,
+                        color: Colors.green,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        user?.email ?? 'Repartidor',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.black54),
+                      ),
+                      const SizedBox(height: 24),
+                      const Text(
+                        'Ruta asignada',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      ...List.generate(_entregasBase.length, (index) {
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: Colors.green[100],
+                              foregroundColor: Colors.green[800],
+                              child: Text('${index + 1}'),
+                            ),
+                            title: Text(_entregasBase[index]),
+                            subtitle: Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: DropdownButtonFormField<String>(
+                                initialValue: estados[index],
+                                decoration: const InputDecoration(
+                                  labelText: 'Estado de entrega',
+                                  isDense: true,
+                                ),
+                                items: _estados.map((estado) {
+                                  return DropdownMenuItem<String>(
+                                    value: estado,
+                                    child: Text(estado),
+                                  );
+                                }).toList(),
+                                onChanged: (estado) {
+                                  if (estado == null) {
+                                    return;
+                                  }
+
+                                  _actualizarEstado(index, estado);
+                                },
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1751,6 +2234,7 @@ class _PantallaRegistroState extends State<PantallaRegistro> {
   final _detallesController = TextEditingController();
   bool _isSaving = false;
   bool _showAddressStep = false;
+  RolUsuario _rolSeleccionado = RolUsuario.admin;
 
   void _goToAddressStep() {
     if (!_personalFormKey.currentState!.validate()) return;
@@ -1766,16 +2250,19 @@ class _PantallaRegistroState extends State<PantallaRegistro> {
     setState(() => _isSaving = true);
 
     try {
-      await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
-      );
+      final credential = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(
+            email: _emailController.text.trim(),
+            password: _passwordController.text.trim(),
+          );
+      await credential.user?.updateDisplayName(_nameController.text.trim());
+      await guardarRolUsuario(_rolSeleccionado, user: credential.user);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            "Usuario ${_nameController.text} registrado en Firebase.",
+            "Usuario ${_nameController.text} registrado como ${_rolSeleccionado.valor}.",
           ),
           backgroundColor: Colors.green,
         ),
@@ -1845,8 +2332,8 @@ class _PantallaRegistroState extends State<PantallaRegistro> {
         key: const ValueKey('personal-step'),
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Icon(Icons.person_add_alt_1, size: 72, color: Colors.green),
-          const SizedBox(height: 24),
+          const Icon(Icons.person_add_alt_1, size: 56, color: Colors.green),
+          const SizedBox(height: 16),
           const Text(
             'Información personal',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
@@ -1870,6 +2357,28 @@ class _PantallaRegistroState extends State<PantallaRegistro> {
             keyboardType: TextInputType.emailAddress,
             validator: (v) =>
                 (v == null || !v.contains('@')) ? 'Correo inválido' : null,
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<RolUsuario>(
+            initialValue: _rolSeleccionado,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              labelText: 'Rol',
+              prefixIcon: Icon(Icons.admin_panel_settings_outlined),
+            ),
+            items: RolUsuario.values.map((rol) {
+              return DropdownMenuItem<RolUsuario>(
+                value: rol,
+                child: Text(rol.etiqueta),
+              );
+            }).toList(),
+            onChanged: (rol) {
+              if (rol == null) {
+                return;
+              }
+
+              setState(() => _rolSeleccionado = rol);
+            },
           ),
           const SizedBox(height: 16),
           TextFormField(
