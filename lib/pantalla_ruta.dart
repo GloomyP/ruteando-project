@@ -9,6 +9,7 @@ import 'directions_service.dart'
 import 'location_service.dart' if (dart.library.js) 'location_service_web.dart';
 import 'pantalla_perfil.dart';
 import 'roles.dart';
+import 'persistencia_rutas.dart';
 
 typedef _ParadaRuta = ({int id, String texto});
 typedef _RutaCandidata = ({
@@ -31,6 +32,11 @@ class _PantallaRutaState extends State<PantallaRuta> {
     'Menor distancia',
     'Menor consumo de combustible',
   ];
+
+  String? _ultimoOrigen;
+  List<String> _ultimasParadasOrdenadas = [];
+  String? _ultimaDistancia;
+  String? _ultimoTiempo;
 
   final TextEditingController _origenController = TextEditingController(
     text: 'Plaza Sotomayor, Valparaiso, Chile',
@@ -199,7 +205,25 @@ class _PantallaRutaState extends State<PantallaRuta> {
       );
       final estimacion = _calcularEstimacion(rutaSeleccionada, rutas);
 
+      final paradasOrdenadas = <String>[];
+      final orden = rutaSeleccionada.ordenParadas;
+      if (orden.isEmpty) {
+        paradasOrdenadas.addAll(rutaCandidata.paradasIntermedias.map((p) => p.texto));
+      } else {
+        for (final idx in orden) {
+          if (idx < rutaCandidata.paradasIntermedias.length) {
+            paradasOrdenadas.add(rutaCandidata.paradasIntermedias[idx].texto);
+          }
+        }
+      }
+      paradasOrdenadas.add(rutaCandidata.destino.texto);
+
       setState(() {
+        _ultimoOrigen = origen;
+        _ultimasParadasOrdenadas = paradasOrdenadas;
+        _ultimaDistancia = '${(rutaSeleccionada.distanciaMetros / 1000).toStringAsFixed(1)} km';
+        _ultimoTiempo = '${(rutaSeleccionada.duracionSegundos / 60).round()} min';
+
         _distanciaTotal =
             '${(rutaSeleccionada.distanciaMetros / 1000).toStringAsFixed(1)} km';
         _tiempoTotal =
@@ -793,6 +817,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
                         DropdownButtonFormField<String>(
                           initialValue: _criterioSeleccionado,
                           isDense: true,
+                          isExpanded: true,
                           decoration: const InputDecoration(
                             isDense: true,
                             labelText: 'Optimizacion',
@@ -846,6 +871,29 @@ class _PantallaRutaState extends State<PantallaRuta> {
                             ),
                           ),
                         ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: (_cargando || _polylines.isEmpty)
+                                ? null
+                                : () => _mostrarDialogoAsignacion(context),
+                            icon: const Icon(Icons.assignment_ind, size: 18),
+                            label: const Text(
+                              'Asignar ruta',
+                              style: TextStyle(fontSize: 13),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              minimumSize: const Size.fromHeight(36),
+                              foregroundColor: Colors.blue[700],
+                              side: BorderSide(
+                                color: _polylines.isEmpty
+                                    ? Colors.grey.shade300
+                                    : Colors.blue.shade700,
+                              ),
+                            ),
+                          ),
+                        ),
                         const Divider(height: 12),
                         _FilaResumen(
                           icono: Icons.directions_car,
@@ -877,6 +925,208 @@ class _PantallaRutaState extends State<PantallaRuta> {
         ],
       ),
     );
+  }
+
+  Future<void> _mostrarDialogoAsignacion(BuildContext context) async {
+    if (_polylines.isEmpty || _ultimoOrigen == null || _ultimasParadasOrdenadas.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Debe generar una ruta optimizada antes de asignarla.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _cargando = true;
+      _estado = 'Cargando conductores...';
+    });
+
+    final conductores = await cargarConductoresVinculados();
+
+    setState(() {
+      _cargando = false;
+      _estado = 'Conductores cargados.';
+    });
+
+    if (!context.mounted) return;
+
+    if (conductores.isEmpty) {
+      showDialog<void>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: const Text('Sin repartidores'),
+            content: const Text(
+              'No tienes repartidores registrados en tu empresa. '
+              'Registra repartidores antes de asignar una ruta.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Cerrar'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                  Navigator.of(context).pushReplacementNamed('/repartidores');
+                },
+                child: const Text('Registrar Repartidores'),
+              ),
+            ],
+          );
+        },
+      );
+      return;
+    }
+
+    Map<String, String>? conductorSeleccionado = conductores.first;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Asignar Ruta Optimizada'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Selecciona un repartidor disponible:',
+                    style: TextStyle(fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<Map<String, String>>(
+                    value: conductorSeleccionado,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Repartidor',
+                      isDense: true,
+                    ),
+                    items: conductores.map((c) {
+                      return DropdownMenuItem<Map<String, String>>(
+                        value: c,
+                        child: Text('${c['nombre']} (${c['correo']})'),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setDialogState(() {
+                          conductorSeleccionado = val;
+                        });
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Resumen de la ruta:',
+                    style: TextStyle(fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(height: 8),
+                  Text('• Origen: $_ultimoOrigen', maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Text('• Paradas: ${_ultimasParadasOrdenadas.length}'),
+                  Text('• Distancia: $_ultimaDistancia'),
+                  Text('• Tiempo estimado: $_ultimoTiempo'),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton(
+                  onPressed: () async {
+                    Navigator.of(dialogContext).pop();
+                    await _confirmarAsignacion(context, conductorSeleccionado!);
+                  },
+                  child: const Text('Asignar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _confirmarAsignacion(
+    BuildContext context,
+    Map<String, String> conductor,
+  ) async {
+    final email = conductor['correo'] ?? '';
+    final nombre = conductor['nombre'] ?? '';
+
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('El conductor seleccionado no tiene correo válido.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _cargando = true;
+      _estado = 'Guardando asignación...';
+    });
+
+    try {
+      final asignacionData = {
+        'origen': _ultimoOrigen,
+        'paradas': _ultimasParadasOrdenadas.map((texto) {
+          return {'texto': texto, 'estado': 'Pendiente'};
+        }).toList(),
+        'distancia': _ultimaDistancia,
+        'tiempo': _ultimoTiempo,
+        'criterio': _criterioSeleccionado,
+        'fechaAsignacion': DateTime.now().toIso8601String(),
+        'repartidorEmail': email,
+        'repartidorNombre': nombre,
+      };
+
+      await guardarRutaAsignada(email, asignacionData);
+
+      final asignaciones = await cargarAsignacionesGlobales();
+      
+      asignaciones.removeWhere((a) => a['repartidorEmail'] == email);
+      asignaciones.add(asignacionData);
+
+      await guardarAsignacionesGlobales(asignaciones);
+
+      setState(() {
+        _cargando = false;
+        _estado = 'Ruta asignada exitosamente.';
+      });
+
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Ruta asignada con éxito a $nombre'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      Navigator.of(context).pushReplacementNamed('/asignacion-rutas');
+    } catch (e) {
+      setState(() {
+        _cargando = false;
+        _estado = 'Error al asignar: $e';
+      });
+
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al guardar la asignación: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 }
 

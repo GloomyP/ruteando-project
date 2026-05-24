@@ -19,7 +19,12 @@ enum RolUsuario {
 }
 
 String usuarioRolKey({User? user}) {
-  final usuario = user ?? FirebaseAuth.instance.currentUser;
+  User? usuario;
+  try {
+    usuario = user ?? FirebaseAuth.instance.currentUser;
+  } catch (_) {
+    // Firebase no inicializado en tests de widgets.
+  }
   final identificador = usuario?.uid ?? usuario?.email;
 
   if (identificador != null && identificador.trim().isNotEmpty) {
@@ -42,7 +47,12 @@ Future<void> guardarRolUsuario(RolUsuario rol, {User? user}) async {
 bool puedeAdministrar(RolUsuario rol) => rol == RolUsuario.admin;
 
 String nombreUsuarioActual() {
-  final user = FirebaseAuth.instance.currentUser;
+  User? user;
+  try {
+    user = FirebaseAuth.instance.currentUser;
+  } catch (_) {
+    // Firebase no inicializado en tests de widgets.
+  }
   final nombre = user?.displayName?.trim();
 
   if (nombre != null && nombre.isNotEmpty) {
