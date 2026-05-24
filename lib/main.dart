@@ -7,25 +7,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'firebase_options.dart';
+import 'persistencia_rutas.dart';
 import 'pantalla_ruta.dart';
+import 'pantalla_asignacion_ruta.dart';
 import 'roles.dart';
 
-const _empresaUsuarioLocalKey = 'empresa_vinculada_usuario_local';
-
-String _empresaUsuarioKey() {
-  try {
-    final user = FirebaseAuth.instance.currentUser;
-    final identificador = user?.uid ?? user?.email;
-
-    if (identificador != null && identificador.trim().isNotEmpty) {
-      return 'empresa_vinculada_usuario_$identificador';
-    }
-  } catch (_) {
-    // Los tests de widgets pueden correr sin Firebase inicializado.
-  }
-
-  return _empresaUsuarioLocalKey;
-}
+String _empresaUsuarioKey() => empresaUsuarioKey();
 
 Future<Map<String, String>?> _cargarEmpresaVinculada() async {
   final prefs = await SharedPreferences.getInstance();
@@ -48,34 +35,7 @@ Future<void> _guardarEmpresaVinculada(Map<String, String> empresa) async {
   await prefs.setString(_empresaUsuarioKey(), jsonEncode(empresa));
 }
 
-String _conductoresUsuarioKey() {
-  return 'conductores_${_empresaUsuarioKey()}';
-}
-
-Future<List<Map<String, String>>> _cargarConductoresVinculados() async {
-  final prefs = await SharedPreferences.getInstance();
-  final data = prefs.getString(_conductoresUsuarioKey());
-
-  if (data == null) {
-    return [];
-  }
-
-  final decoded = jsonDecode(data);
-  if (decoded is! List) {
-    return [];
-  }
-
-  return decoded.whereType<Map<String, dynamic>>().map((conductor) {
-    return conductor.map((key, value) => MapEntry(key, value.toString()));
-  }).toList();
-}
-
-Future<void> _guardarConductoresVinculados(
-  List<Map<String, String>> conductores,
-) async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setString(_conductoresUsuarioKey(), jsonEncode(conductores));
-}
+const _empresaUsuarioLocalKey = 'empresa_vinculada_usuario_local';
 
 class _RutInputFormatter extends TextInputFormatter {
   static final _caracteresValidos = RegExp(r'[^0-9kK]');
@@ -151,7 +111,7 @@ class RuteandoApp extends StatelessWidget {
         '/rutas': (context) =>
             const PantallaProtegidaAdmin(pantalla: PantallaRuta()),
         '/asignacion-rutas': (context) => const PantallaProtegidaAdmin(
-          pantalla: PantallaModuloEnDesarrollo(titulo: 'Asignacion de Ruta'),
+          pantalla: PantallaAsignacionRuta(),
         ),
         '/monitoreo-entregas': (context) => const PantallaProtegidaAdmin(
           pantalla: PantallaModuloEnDesarrollo(titulo: 'Monitoreo de Entregas'),
@@ -294,12 +254,8 @@ class _DrawerPorRol extends StatelessWidget {
                   ),
                   ListTile(
                     leading: const Icon(Icons.assignment_outlined),
-                    title: const Text('Asignacion de Ruta'),
-                    onTap: () => abrir(
-                      const PantallaModuloEnDesarrollo(
-                        titulo: 'Asignacion de Ruta',
-                      ),
-                    ),
+                    title: const Text('Asignación de Ruta'),
+                    onTap: () => abrir(const PantallaAsignacionRuta()),
                   ),
                   ListTile(
                     leading: const Icon(Icons.monitor_heart_outlined),
@@ -502,9 +458,15 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
               ),
               ListTile(
                 leading: const Icon(Icons.assignment_outlined),
-                title: const Text('Asignacion de Ruta'),
-                onTap: () =>
-                    _abrirModuloEnDesarrollo(context, 'Asignacion de Ruta'),
+                title: const Text('Asignación de Ruta'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (context) => const PantallaAsignacionRuta(),
+                    ),
+                  );
+                },
               ),
               ListTile(
                 leading: const Icon(Icons.monitor_heart_outlined),
@@ -756,7 +718,7 @@ class _PantallaConductoresState extends State<PantallaConductores> {
 
   Future<void> _cargarDatos() async {
     final empresa = await _cargarEmpresaVinculada();
-    final conductores = await _cargarConductoresVinculados();
+    final conductores = await cargarConductoresVinculados();
 
     if (!mounted) {
       return;
@@ -813,7 +775,7 @@ class _PantallaConductoresState extends State<PantallaConductores> {
 
     final conductoresActualizados = [..._conductores, conductor];
 
-    await _guardarConductoresVinculados(conductoresActualizados);
+    await guardarConductoresVinculados(conductoresActualizados);
 
     if (!mounted) {
       return;
@@ -963,7 +925,7 @@ class _PantallaConductoresState extends State<PantallaConductores> {
 
     final repartidoresActualizados = [..._conductores];
     repartidoresActualizados[index] = repartidorActualizado;
-    await _guardarConductoresVinculados(repartidoresActualizados);
+    await guardarConductoresVinculados(repartidoresActualizados);
 
     if (!mounted) {
       return;
@@ -1470,49 +1432,74 @@ class PantallaRutaAsignada extends StatefulWidget {
 
 class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
   static const _estados = ['Pendiente', 'En camino', 'Entregado'];
-  static const _entregasBase = [
-    'Retiro en bodega central',
-    'Entrega cliente 1',
-    'Entrega cliente 2',
-  ];
 
-  late Future<List<String>> _estadosFuture;
+  Map<String, dynamic>? _rutaAsignada;
+  bool _cargando = true;
 
-  String get _keyEstados {
-    final user = FirebaseAuth.instance.currentUser;
-    final identificador = user?.uid ?? user?.email ?? 'local';
-    return 'estados_entregas_$identificador';
+  String get _driverEmail {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      return user?.email ?? 'local';
+    } catch (_) {
+      return 'local';
+    }
   }
 
   @override
   void initState() {
     super.initState();
-    _estadosFuture = _cargarEstados();
+    _cargarRuta();
   }
 
-  Future<List<String>> _cargarEstados() async {
-    final prefs = await SharedPreferences.getInstance();
-    return List<String>.generate(_entregasBase.length, (index) {
-      return prefs.getString('${_keyEstados}_$index') ?? _estados.first;
-    });
-  }
-
-  Future<void> _actualizarEstado(int index, String estado) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('${_keyEstados}_$index', estado);
-
-    if (!mounted) {
-      return;
-    }
-
+  Future<void> _cargarRuta() async {
+    setState(() => _cargando = true);
+    final email = _driverEmail;
+    final ruta = await cargarRutaAsignada(email);
+    
+    if (!mounted) return;
     setState(() {
-      _estadosFuture = _cargarEstados();
+      _rutaAsignada = ruta;
+      _cargando = false;
     });
+  }
+
+  Future<void> _actualizarEstado(int index, String nuevoEstado) async {
+    if (_rutaAsignada == null) return;
+
+    // Crear copias mutables de las paradas
+    final paradas = List<Map<String, dynamic>>.from(
+      (_rutaAsignada!['paradas'] as List).map(
+        (p) => Map<String, dynamic>.from(p as Map),
+      ),
+    );
+
+    paradas[index]['estado'] = nuevoEstado;
+    _rutaAsignada!['paradas'] = paradas;
+
+    final email = _driverEmail;
+
+    // Guardar localmente la asignación actualizada
+    await guardarRutaAsignada(email, _rutaAsignada!);
+
+    // Sincronizar en la lista global de asignaciones para el administrador
+    final globalAssignments = await cargarAsignacionesGlobales();
+    final idx = globalAssignments.indexWhere((a) => a['repartidorEmail'] == email);
+    if (idx != -1) {
+      globalAssignments[idx] = _rutaAsignada!;
+    } else {
+      globalAssignments.add(_rutaAsignada!);
+    }
+    await guardarAsignacionesGlobales(globalAssignments);
+
+    setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
+    User? user;
+    try {
+      user = FirebaseAuth.instance.currentUser;
+    } catch (_) {}
 
     return Scaffold(
       appBar: AppBar(
@@ -1524,88 +1511,218 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
       drawer: _buildMenuDrawer(context),
       body: SafeArea(
         child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 520),
-              child: FutureBuilder<List<String>>(
-                future: _estadosFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
+          child: _cargando
+              ? const CircularProgressIndicator()
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 520),
+                    child: _rutaAsignada == null
+                        ? _buildEmptyState()
+                        : _buildDetalleRuta(user),
+                  ),
+                ),
+        ),
+      ),
+    );
+  }
 
-                  final estados =
-                      snapshot.data ??
-                      List<String>.filled(_entregasBase.length, _estados.first);
-
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Icon(
-                        Icons.route_outlined,
-                        size: 72,
-                        color: Colors.green,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        user?.email ?? 'Repartidor',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.black54),
-                      ),
-                      const SizedBox(height: 24),
-                      const Text(
-                        'Ruta asignada',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      ...List.generate(_entregasBase.length, (index) {
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: Colors.green[100],
-                              foregroundColor: Colors.green[800],
-                              child: Text('${index + 1}'),
-                            ),
-                            title: Text(_entregasBase[index]),
-                            subtitle: Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: DropdownButtonFormField<String>(
-                                initialValue: estados[index],
-                                decoration: const InputDecoration(
-                                  labelText: 'Estado de entrega',
-                                  isDense: true,
-                                ),
-                                items: _estados.map((estado) {
-                                  return DropdownMenuItem<String>(
-                                    value: estado,
-                                    child: Text(estado),
-                                  );
-                                }).toList(),
-                                onChanged: (estado) {
-                                  if (estado == null) {
-                                    return;
-                                  }
-
-                                  _actualizarEstado(index, estado);
-                                },
-                              ),
-                            ),
-                          ),
-                        );
-                      }),
-                    ],
-                  );
-                },
-              ),
+  Widget _buildEmptyState() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Icon(
+          Icons.route_outlined,
+          size: 96,
+          color: Colors.grey,
+        ),
+        const SizedBox(height: 24),
+        const Text(
+          'No tienes rutas asignadas',
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 12),
+        const Text(
+          'Tu administrador de flota te asignará una ruta optimizada cuando esté disponible. Presiona Refrescar para comprobar.',
+          style: TextStyle(
+            fontSize: 15,
+            color: Colors.black54,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 24),
+        Center(
+          child: OutlinedButton.icon(
+            onPressed: _cargarRuta,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Refrescar'),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             ),
           ),
         ),
-      ),
+      ],
+    );
+  }
+
+  Widget _buildDetalleRuta(User? user) {
+    final origen = _rutaAsignada!['origen']?.toString() ?? 'No especificado';
+    final paradas = _rutaAsignada!['paradas'] as List? ?? [];
+    final distancia = _rutaAsignada!['distancia']?.toString() ?? 'N/A';
+    final tiempo = _rutaAsignada!['tiempo']?.toString() ?? 'N/A';
+    
+    // Estadísticas
+    final total = paradas.length;
+    final entregados = paradas.where((p) => (p as Map)['estado'] == 'Entregado').length;
+    final porcentaje = total > 0 ? entregados / total : 0.0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Icon(
+          Icons.alt_route,
+          size: 72,
+          color: Colors.green,
+        ),
+        const SizedBox(height: 16),
+        Text(
+          user?.email ?? 'Repartidor',
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: Colors.black54),
+        ),
+        const SizedBox(height: 24),
+        Card(
+          elevation: 3,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Resumen del viaje',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.trip_origin, size: 16, color: Colors.green),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Origen: $origen',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Distancia: $distancia', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                    Text('Tiempo estimado: $tiempo', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                  ],
+                ),
+                const Divider(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Progreso de entregas', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    Text('$entregados / $total completadas', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: porcentaje,
+                    minHeight: 6,
+                    color: entregados == total ? Colors.green : Colors.orange,
+                    backgroundColor: Colors.grey[200],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Paradas en ruta',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            IconButton(
+              tooltip: 'Recargar ruta',
+              onPressed: _cargarRuta,
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        ...List.generate(total, (index) {
+          final parada = paradas[index] as Map;
+          final texto = parada['texto']?.toString() ?? '';
+          final estado = parada['estado']?.toString() ?? 'Pendiente';
+
+          Color estadoColor = Colors.grey;
+          if (estado == 'En camino') estadoColor = Colors.blue;
+          if (estado == 'Entregado') estadoColor = Colors.green;
+
+          return Card(
+            margin: const EdgeInsets.only(bottom: 12),
+            child: ListTile(
+              leading: CircleAvatar(
+                backgroundColor: estadoColor.withOpacity(0.1),
+                foregroundColor: estadoColor,
+                child: Text('${index + 1}'),
+              ),
+              title: Text(
+                texto,
+                style: const TextStyle(fontWeight: FontWeight.w500),
+              ),
+              subtitle: Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: DropdownButtonFormField<String>(
+                  value: estado,
+                  decoration: InputDecoration(
+                    labelText: 'Estado de entrega',
+                    isDense: true,
+                    labelStyle: TextStyle(color: estadoColor),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: estadoColor),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: estadoColor.withOpacity(0.5)),
+                    ),
+                  ),
+                  items: _estados.map((est) {
+                    return DropdownMenuItem<String>(
+                      value: est,
+                      child: Text(est),
+                    );
+                  }).toList(),
+                  onChanged: (nuevoEst) {
+                    if (nuevoEst == null) return;
+                    _actualizarEstado(index, nuevoEst);
+                  },
+                ),
+              ),
+            ),
+          );
+        }),
+      ],
     );
   }
 }
