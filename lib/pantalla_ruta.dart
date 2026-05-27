@@ -208,7 +208,9 @@ class _PantallaRutaState extends State<PantallaRuta> {
       final paradasOrdenadas = <String>[];
       final orden = rutaSeleccionada.ordenParadas;
       if (orden.isEmpty) {
-        paradasOrdenadas.addAll(rutaCandidata.paradasIntermedias.map((p) => p.texto));
+        paradasOrdenadas.addAll(
+          rutaCandidata.paradasIntermedias.map((p) => p.texto),
+        );
       } else {
         for (final idx in orden) {
           if (idx < rutaCandidata.paradasIntermedias.length) {
@@ -221,8 +223,10 @@ class _PantallaRutaState extends State<PantallaRuta> {
       setState(() {
         _ultimoOrigen = origen;
         _ultimasParadasOrdenadas = paradasOrdenadas;
-        _ultimaDistancia = '${(rutaSeleccionada.distanciaMetros / 1000).toStringAsFixed(1)} km';
-        _ultimoTiempo = '${(rutaSeleccionada.duracionSegundos / 60).round()} min';
+        _ultimaDistancia =
+            '${(rutaSeleccionada.distanciaMetros / 1000).toStringAsFixed(1)} km';
+        _ultimoTiempo =
+            '${(rutaSeleccionada.duracionSegundos / 60).round()} min';
 
         _distanciaTotal =
             '${(rutaSeleccionada.distanciaMetros / 1000).toStringAsFixed(1)} km';
@@ -928,7 +932,9 @@ class _PantallaRutaState extends State<PantallaRuta> {
   }
 
   Future<void> _mostrarDialogoAsignacion(BuildContext context) async {
-    if (_polylines.isEmpty || _ultimoOrigen == null || _ultimasParadasOrdenadas.isEmpty) {
+    if (_polylines.isEmpty ||
+        _ultimoOrigen == null ||
+        _ultimasParadasOrdenadas.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Debe generar una ruta optimizada antes de asignarla.'),
@@ -1000,7 +1006,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<Map<String, String>>(
-                    value: conductorSeleccionado,
+                    initialValue: conductorSeleccionado,
                     isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'Repartidor',
@@ -1026,7 +1032,11 @@ class _PantallaRutaState extends State<PantallaRuta> {
                     style: TextStyle(fontWeight: FontWeight.w500),
                   ),
                   const SizedBox(height: 8),
-                  Text('• Origen: $_ultimoOrigen', maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Text(
+                    '• Origen: $_ultimoOrigen',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   Text('• Paradas: ${_ultimasParadasOrdenadas.length}'),
                   Text('• Distancia: $_ultimaDistancia'),
                   Text('• Tiempo estimado: $_ultimoTiempo'),
@@ -1089,9 +1099,21 @@ class _PantallaRutaState extends State<PantallaRuta> {
       };
 
       await guardarRutaAsignada(email, asignacionData);
+      await guardarNotificacionRuta(email, {
+        'titulo': 'Nueva ruta asignada',
+        'mensaje': 'Tienes una ruta optimizada pendiente.',
+        'origen': _ultimoOrigen,
+        'paradas': _ultimasParadasOrdenadas.length,
+        'distancia': _ultimaDistancia,
+        'tiempo': _ultimoTiempo,
+        'criterio': _criterioSeleccionado,
+        'rutaDestino': '/mi-ruta',
+        'leida': false,
+        'fechaCreacion': DateTime.now().toIso8601String(),
+      });
 
       final asignaciones = await cargarAsignacionesGlobales();
-      
+
       asignaciones.removeWhere((a) => a['repartidorEmail'] == email);
       asignaciones.add(asignacionData);
 
