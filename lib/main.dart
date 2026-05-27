@@ -35,8 +35,6 @@ Future<void> _guardarEmpresaVinculada(Map<String, String> empresa) async {
   await prefs.setString(_empresaUsuarioKey(), jsonEncode(empresa));
 }
 
-const _empresaUsuarioLocalKey = 'empresa_vinculada_usuario_local';
-
 class _RutInputFormatter extends TextInputFormatter {
   static final _caracteresValidos = RegExp(r'[^0-9kK]');
 
@@ -110,9 +108,8 @@ class RuteandoApp extends StatelessWidget {
             const PantallaProtegidaAdmin(pantalla: PantallaConductores()),
         '/rutas': (context) =>
             const PantallaProtegidaAdmin(pantalla: PantallaRuta()),
-        '/asignacion-rutas': (context) => const PantallaProtegidaAdmin(
-          pantalla: PantallaAsignacionRuta(),
-        ),
+        '/asignacion-rutas': (context) =>
+            const PantallaProtegidaAdmin(pantalla: PantallaAsignacionRuta()),
         '/monitoreo-entregas': (context) => const PantallaProtegidaAdmin(
           pantalla: PantallaModuloEnDesarrollo(titulo: 'Monitoreo de Entregas'),
         ),
@@ -1434,6 +1431,7 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
   static const _estados = ['Pendiente', 'En camino', 'Entregado'];
 
   Map<String, dynamic>? _rutaAsignada;
+  Map<String, dynamic>? _notificacionRuta;
   bool _cargando = true;
 
   String get _driverEmail {
@@ -1455,12 +1453,27 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
     setState(() => _cargando = true);
     final email = _driverEmail;
     final ruta = await cargarRutaAsignada(email);
-    
+    final notificacion = await cargarNotificacionRuta(email);
+
     if (!mounted) return;
     setState(() {
       _rutaAsignada = ruta;
+      _notificacionRuta = notificacion;
       _cargando = false;
     });
+  }
+
+  Future<void> _abrirRutaDesdeNotificacion() async {
+    final email = _driverEmail;
+    await marcarNotificacionRutaLeida(email);
+    final notificacionActualizada = await cargarNotificacionRuta(email);
+
+    if (!mounted) return;
+    setState(() {
+      _notificacionRuta = notificacionActualizada;
+    });
+
+    await _cargarRuta();
   }
 
   Future<void> _actualizarEstado(int index, String nuevoEstado) async {
@@ -1483,7 +1496,9 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
 
     // Sincronizar en la lista global de asignaciones para el administrador
     final globalAssignments = await cargarAsignacionesGlobales();
-    final idx = globalAssignments.indexWhere((a) => a['repartidorEmail'] == email);
+    final idx = globalAssignments.indexWhere(
+      (a) => a['repartidorEmail'] == email,
+    );
     if (idx != -1) {
       globalAssignments[idx] = _rutaAsignada!;
     } else {
@@ -1517,9 +1532,19 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
                   padding: const EdgeInsets.all(24),
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 520),
-                    child: _rutaAsignada == null
-                        ? _buildEmptyState()
-                        : _buildDetalleRuta(user),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (_notificacionRuta != null &&
+                            _notificacionRuta!['leida'] != true) ...[
+                          _buildNotificacionRuta(),
+                          const SizedBox(height: 16),
+                        ],
+                        _rutaAsignada == null
+                            ? _buildEmptyState()
+                            : _buildDetalleRuta(user),
+                      ],
+                    ),
                   ),
                 ),
         ),
@@ -1532,27 +1557,17 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Icon(
-          Icons.route_outlined,
-          size: 96,
-          color: Colors.grey,
-        ),
+        const Icon(Icons.route_outlined, size: 96, color: Colors.grey),
         const SizedBox(height: 24),
         const Text(
           'No tienes rutas asignadas',
-          style: TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 12),
         const Text(
           'Tu administrador de flota te asignará una ruta optimizada cuando esté disponible. Presiona Refrescar para comprobar.',
-          style: TextStyle(
-            fontSize: 15,
-            color: Colors.black54,
-          ),
+          style: TextStyle(fontSize: 15, color: Colors.black54),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 24),
@@ -1570,25 +1585,113 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
     );
   }
 
+  Widget _buildNotificacionRuta() {
+    final titulo =
+        _notificacionRuta!['titulo']?.toString() ?? 'Nueva ruta asignada';
+    final mensaje =
+        _notificacionRuta!['mensaje']?.toString() ??
+        'Tienes una ruta pendiente.';
+    final origen =
+        _notificacionRuta!['origen']?.toString() ?? 'Origen no especificado';
+    final paradas = _notificacionRuta!['paradas']?.toString() ?? '0';
+    final distancia = _notificacionRuta!['distancia']?.toString() ?? 'N/A';
+    final tiempo = _notificacionRuta!['tiempo']?.toString() ?? 'N/A';
+    final criterio = _notificacionRuta!['criterio']?.toString() ?? 'N/A';
+
+    return Card(
+      elevation: 3,
+      color: Colors.green[50],
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.green.shade200),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.notifications_active, color: Colors.green[800]),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        titulo,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(mensaje, style: const TextStyle(fontSize: 13)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 20),
+            Text(
+              'Origen: $origen',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12),
+            ),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              children: [
+                Text('Paradas: $paradas', style: const TextStyle(fontSize: 12)),
+                Text(
+                  'Distancia: $distancia',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                Text('Tiempo: $tiempo', style: const TextStyle(fontSize: 12)),
+                Text(
+                  'Criterio: $criterio',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(
+                onPressed: _abrirRutaDesdeNotificacion,
+                icon: const Icon(Icons.route),
+                label: const Text('Ver ruta'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.green[700],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildDetalleRuta(User? user) {
     final origen = _rutaAsignada!['origen']?.toString() ?? 'No especificado';
     final paradas = _rutaAsignada!['paradas'] as List? ?? [];
     final distancia = _rutaAsignada!['distancia']?.toString() ?? 'N/A';
     final tiempo = _rutaAsignada!['tiempo']?.toString() ?? 'N/A';
-    
+
     // Estadísticas
     final total = paradas.length;
-    final entregados = paradas.where((p) => (p as Map)['estado'] == 'Entregado').length;
+    final entregados = paradas
+        .where((p) => (p as Map)['estado'] == 'Entregado')
+        .length;
     final porcentaje = total > 0 ? entregados / total : 0.0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Icon(
-          Icons.alt_route,
-          size: 72,
-          color: Colors.green,
-        ),
+        const Icon(Icons.alt_route, size: 72, color: Colors.green),
         const SizedBox(height: 16),
         Text(
           user?.email ?? 'Repartidor',
@@ -1598,7 +1701,9 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
         const SizedBox(height: 24),
         Card(
           elevation: 3,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -1612,7 +1717,11 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.trip_origin, size: 16, color: Colors.green),
+                    const Icon(
+                      Icons.trip_origin,
+                      size: 16,
+                      color: Colors.green,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -1623,19 +1732,44 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Wrap(
+                  spacing: 16,
+                  runSpacing: 4,
                   children: [
-                    Text('Distancia: $distancia', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
-                    Text('Tiempo estimado: $tiempo', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                    Text(
+                      'Distancia: $distancia',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Text(
+                      'Tiempo estimado: $tiempo',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                   ],
                 ),
                 const Divider(height: 24),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('Progreso de entregas', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                    Text('$entregados / $total completadas', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    const Text(
+                      'Progreso de entregas',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      '$entregados / $total completadas',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -1658,10 +1792,7 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
           children: [
             const Text(
               'Paradas en ruta',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-              ),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
             ),
             IconButton(
               tooltip: 'Recargar ruta',
@@ -1684,7 +1815,7 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
             margin: const EdgeInsets.only(bottom: 12),
             child: ListTile(
               leading: CircleAvatar(
-                backgroundColor: estadoColor.withOpacity(0.1),
+                backgroundColor: estadoColor.withValues(alpha: 0.1),
                 foregroundColor: estadoColor,
                 child: Text('${index + 1}'),
               ),
@@ -1695,7 +1826,7 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
               subtitle: Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: DropdownButtonFormField<String>(
-                  value: estado,
+                  initialValue: estado,
                   decoration: InputDecoration(
                     labelText: 'Estado de entrega',
                     isDense: true,
@@ -1704,7 +1835,9 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
                       borderSide: BorderSide(color: estadoColor),
                     ),
                     enabledBorder: OutlineInputBorder(
-                      borderSide: BorderSide(color: estadoColor.withOpacity(0.5)),
+                      borderSide: BorderSide(
+                        color: estadoColor.withValues(alpha: 0.5),
+                      ),
                     ),
                   ),
                   items: _estados.map((est) {
