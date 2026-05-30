@@ -538,6 +538,9 @@ class _PantallaRutaState extends State<PantallaRuta> {
           child: FutureBuilder<RolUsuario>(
             future: cargarRolUsuario(),
             builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
               final rol = snapshot.data ?? RolUsuario.admin;
               final esAdmin = puedeAdministrar(rol);
 

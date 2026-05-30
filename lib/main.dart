@@ -12,10 +12,40 @@ import 'pantalla_ruta.dart';
 import 'pantalla_asignacion_ruta.dart';
 import 'roles.dart';
 import 'pantalla_monitoreo_entregas.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; 
 
 String _empresaUsuarioKey() => empresaUsuarioKey();
 
+// Inicializamos la instancia conectada a tu base de datos específica "ruteando"
+final FirebaseFirestore _firestore = FirebaseFirestore.instanceFor(
+  app: Firebase.app(),
+  databaseId: 'ruteando',
+);
+
 Future<Map<String, String>?> _cargarEmpresaVinculada() async {
+  try {
+    final user = FirebaseAuth.instance.currentUser;
+    final identificador = user?.email?.toLowerCase().trim() ?? user?.uid;
+
+    if (identificador != null) {
+      // 1. Intentar cargar los datos desde la nube (Firestore)
+      final doc = await _firestore.collection('empresas_usuarios').doc(identificador).get();
+      if (doc.exists && doc.data() != null) {
+        final Map<String, dynamic> data = doc.data()!;
+        final Map<String, String> empresa = data.map((key, value) => MapEntry(key, value.toString()));
+
+        // Actualizamos el respaldo en SharedPreferences por si acaso
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_empresaUsuarioKey(), jsonEncode(empresa));
+
+        return empresa;
+      }
+    }
+  } catch (_) {
+    // Si no hay red o falla Firestore, el flujo cae al respaldo de SharedPreferences
+  }
+
+  // 2. Respaldo local tradicional con SharedPreferences
   final prefs = await SharedPreferences.getInstance();
   final data = prefs.getString(_empresaUsuarioKey());
 
@@ -32,8 +62,24 @@ Future<Map<String, String>?> _cargarEmpresaVinculada() async {
 }
 
 Future<void> _guardarEmpresaVinculada(Map<String, String> empresa) async {
+  // 1. Guardar localmente en SharedPreferences para acceso rápido inmediato
   final prefs = await SharedPreferences.getInstance();
   await prefs.setString(_empresaUsuarioKey(), jsonEncode(empresa));
+
+  // 2. Guardar en la nube (Firestore) para persistencia real multiusuario
+  try {
+    final user = FirebaseAuth.instance.currentUser;
+    final identificador = user?.email?.toLowerCase().trim() ?? user?.uid;
+
+    if (identificador != null) {
+      await _firestore.collection('empresas_usuarios').doc(identificador).set(
+        empresa,
+        SetOptions(merge: true),
+      );
+    }
+  } catch (e) {
+    print('Error al guardar la empresa en Firestore: $e');
+  }
 }
 
 class _RutInputFormatter extends TextInputFormatter {
@@ -206,6 +252,9 @@ class _DrawerPorRol extends StatelessWidget {
         child: FutureBuilder<RolUsuario>(
           future: cargarRolUsuario(),
           builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
             final rol = snapshot.data ?? RolUsuario.admin;
             final esAdmin = puedeAdministrar(rol);
 
