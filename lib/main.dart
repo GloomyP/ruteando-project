@@ -11,6 +11,7 @@ import 'persistencia_rutas.dart';
 import 'pantalla_ruta.dart';
 import 'pantalla_asignacion_ruta.dart';
 import 'roles.dart';
+import 'pantalla_monitoreo_entregas.dart';
 
 String _empresaUsuarioKey() => empresaUsuarioKey();
 
@@ -111,7 +112,7 @@ class RuteandoApp extends StatelessWidget {
         '/asignacion-rutas': (context) =>
             const PantallaProtegidaAdmin(pantalla: PantallaAsignacionRuta()),
         '/monitoreo-entregas': (context) => const PantallaProtegidaAdmin(
-          pantalla: PantallaModuloEnDesarrollo(titulo: 'Monitoreo de Entregas'),
+          pantalla: PantallaMonitoreoEntregas(),
         ),
         '/inventario': (context) => const PantallaProtegidaAdmin(
           pantalla: PantallaModuloEnDesarrollo(titulo: 'Inventario'),
@@ -257,11 +258,7 @@ class _DrawerPorRol extends StatelessWidget {
                   ListTile(
                     leading: const Icon(Icons.monitor_heart_outlined),
                     title: const Text('Monitoreo de Entregas'),
-                    onTap: () => abrir(
-                      const PantallaModuloEnDesarrollo(
-                        titulo: 'Monitoreo de Entregas',
-                      ),
-                    ),
+                    onTap: () => abrir(const PantallaMonitoreoEntregas()),
                   ),
                   ListTile(
                     leading: const Icon(Icons.people_alt_outlined),
@@ -468,8 +465,14 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
               ListTile(
                 leading: const Icon(Icons.monitor_heart_outlined),
                 title: const Text('Monitoreo de Entregas'),
-                onTap: () =>
-                    _abrirModuloEnDesarrollo(context, 'Monitoreo de Entregas'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (context) => const PantallaMonitoreoEntregas(),
+                    ),
+                  );
+                },
               ),
               ListTile(
                 leading: const Icon(Icons.people_alt_outlined),
