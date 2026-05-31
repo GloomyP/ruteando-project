@@ -13,9 +13,27 @@ import 'pantalla_ruta.dart';
 import 'pantalla_asignacion_ruta.dart';
 import 'roles.dart';
 import 'pantalla_monitoreo_entregas.dart';
+import 'pantalla_perfil.dart';
+import 'perfil_usuario.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 String _empresaUsuarioKey() => empresaUsuarioKey();
+
+class _EstadoSesion {
+  const _EstadoSesion({required this.rol, required this.debeCambiarContrasena});
+
+  final RolUsuario rol;
+  final bool debeCambiarContrasena;
+}
+
+Future<_EstadoSesion> _cargarEstadoSesion(User user) async {
+  final rol = await cargarRolUsuario(user: user);
+  final requiereCambio = rol == RolUsuario.repartidor
+      ? await debeCambiarContrasena(user: user)
+      : false;
+
+  return _EstadoSesion(rol: rol, debeCambiarContrasena: requiereCambio);
+}
 
 // Inicializamos la instancia conectada a tu base de datos específica "ruteando"
 final FirebaseFirestore _firestore = FirebaseFirestore.instanceFor(
@@ -182,19 +200,29 @@ class RuteandoApp extends StatelessWidget {
           }
           final user = snapshot.data;
           if (user != null) {
-            return FutureBuilder<RolUsuario>(
-              future: cargarRolUsuario(user: user),
-              builder: (context, rolSnapshot) {
-                if (rolSnapshot.connectionState == ConnectionState.waiting) {
+            return FutureBuilder<_EstadoSesion>(
+              future: _cargarEstadoSesion(user),
+              builder: (context, estadoSnapshot) {
+                if (estadoSnapshot.connectionState == ConnectionState.waiting) {
                   return const Scaffold(
                     body: Center(child: CircularProgressIndicator()),
                   );
                 }
 
-                final rol = rolSnapshot.data ?? RolUsuario.admin;
-                return rol == RolUsuario.repartidor
-                    ? const PantallaRutaAsignada()
-                    : const PantallaPrincipal();
+                final estado =
+                    estadoSnapshot.data ??
+                    const _EstadoSesion(
+                      rol: RolUsuario.admin,
+                      debeCambiarContrasena: false,
+                    );
+
+                if (estado.rol == RolUsuario.repartidor) {
+                  return estado.debeCambiarContrasena
+                      ? const PantallaCambioContrasenaObligatorio()
+                      : const PantallaRutaAsignada();
+                }
+
+                return const PantallaPrincipal();
               },
             );
           }
@@ -308,6 +336,31 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
   }
 
   Future<void> _cerrarSesion(BuildContext context) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Cerrar sesion'),
+          content: const Text('¿Quieres cerrar tu sesion?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.logout),
+              label: const Text('Cerrar sesion'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmar != true || !context.mounted) {
+      return;
+    }
+
     Navigator.pop(context);
     await FirebaseAuth.instance.signOut();
   }
@@ -552,6 +605,7 @@ class _PantallaConductoresState extends State<PantallaConductores> {
 
   Map<String, String>? _empresa;
   List<Map<String, String>> _conductores = [];
+  Map<String, String> _contrasenasVisibles = {};
   bool _cargando = true;
   String? _mensajeError;
   String? _mensajeExito;
@@ -643,9 +697,80 @@ class _PantallaConductoresState extends State<PantallaConductores> {
     return null;
   }
 
+  String _normalizarCorreo(String correo) {
+    return correo.toLowerCase().trim();
+  }
+
+  String _generarContrasenaTemporal(String nombre) {
+    final nombreClave = nombre.trim().toLowerCase().replaceAll(
+      RegExp(r'\s+'),
+      '',
+    );
+    return '${nombreClave}123';
+  }
+
+  Future<void> _crearCuentaRepartidor({
+    required String nombre,
+    required String correo,
+    required String contrasena,
+  }) async {
+    if (Firebase.apps.isEmpty) {
+      return;
+    }
+
+    final app = await Firebase.initializeApp(
+      name:
+          'ruteando-creacion-repartidor-${DateTime.now().microsecondsSinceEpoch}',
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+
+    try {
+      final auth = FirebaseAuth.instanceFor(app: app);
+      final credential = await auth.createUserWithEmailAndPassword(
+        email: correo,
+        password: contrasena,
+      );
+      await credential.user?.updateDisplayName(nombre);
+      await auth.signOut();
+    } finally {
+      await app.delete();
+    }
+  }
+
+  Future<Map<String, String>> _cargarContrasenasVisibles(
+    List<Map<String, String>> conductores,
+  ) async {
+    if (Firebase.apps.isEmpty) {
+      return {};
+    }
+
+    final contrasenas = <String, String>{};
+
+    for (final conductor in conductores) {
+      final correo = _normalizarCorreo(conductor['correo'] ?? '');
+      if (correo.isEmpty) {
+        continue;
+      }
+
+      try {
+        final doc = await _firestore
+            .collection('roles_usuarios')
+            .doc(correo)
+            .get();
+        final visible = doc.data()?['contrasenaTemporalVisible']?.toString();
+        if (visible != null && visible.isNotEmpty) {
+          contrasenas[correo] = visible;
+        }
+      } catch (_) {}
+    }
+
+    return contrasenas;
+  }
+
   Future<void> _cargarDatos() async {
     final empresa = await _cargarEmpresaVinculada();
     final conductores = await cargarConductoresVinculados();
+    final contrasenas = await _cargarContrasenasVisibles(conductores);
 
     if (!mounted) {
       return;
@@ -654,6 +779,7 @@ class _PantallaConductoresState extends State<PantallaConductores> {
     setState(() {
       _empresa = empresa;
       _conductores = conductores;
+      _contrasenasVisibles = contrasenas;
       _cargando = false;
     });
   }
@@ -667,13 +793,18 @@ class _PantallaConductoresState extends State<PantallaConductores> {
       return;
     }
 
+    final nombre = _nombreController.text.trim();
+    final correo = _normalizarCorreo(_correoController.text);
+    final contrasenaTemporal = _generarContrasenaTemporal(nombre);
+
     final conductor = {
-      'nombre': _nombreController.text.trim(),
+      'nombre': nombre,
       'rut': _rutController.text.trim(),
-      'correo': _correoController.text.trim(),
+      'correo': correo,
       'telefono': _telefonoController.text.trim(),
       'empresa': _empresa?['rut'] ?? _empresaUsuarioKey(),
       'rol': RolUsuario.repartidor.valor,
+      'contrasenaTemporal': contrasenaTemporal,
     };
 
     final confirmarAsociacion = await showDialog<bool>(
@@ -702,7 +833,37 @@ class _PantallaConductoresState extends State<PantallaConductores> {
 
     final conductoresActualizados = [..._conductores, conductor];
 
-    await guardarConductoresVinculados(conductoresActualizados);
+    try {
+      await _crearCuentaRepartidor(
+        nombre: nombre,
+        correo: correo,
+        contrasena: contrasenaTemporal,
+      );
+      if (Firebase.apps.isNotEmpty) {
+        await guardarCambioContrasenaRequerido(
+          email: correo,
+          contrasenaTemporal: contrasenaTemporal,
+        );
+      }
+      if (Firebase.apps.isNotEmpty) {
+        await guardarConductoresVinculados(conductoresActualizados);
+        await actualizarTelefonoPerfilPorAdmin(
+          email: correo,
+          nombre: nombre,
+          telefono: _telefonoController.text.trim(),
+        );
+      }
+    } on FirebaseException catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _mensajeError = 'Error: ${e.message}';
+        _mensajeExito = null;
+      });
+      return;
+    }
 
     if (!mounted) {
       return;
@@ -710,6 +871,7 @@ class _PantallaConductoresState extends State<PantallaConductores> {
 
     setState(() {
       _conductores = conductoresActualizados;
+      _contrasenasVisibles[correo] = contrasenaTemporal;
       _nombreController.clear();
       _rutController.clear();
       _correoController.clear();
@@ -835,6 +997,12 @@ class _PantallaConductoresState extends State<PantallaConductores> {
                       'telefono': telefonoController.text.trim(),
                       'empresa': repartidor['empresa'] ?? _empresaUsuarioKey(),
                       'rol': rolSeleccionado.valor,
+                      'contrasenaTemporal':
+                          repartidor['contrasenaTemporal'] ??
+                          _contrasenasVisibles[_normalizarCorreo(
+                            repartidor['correo'] ?? '',
+                          )] ??
+                          '****',
                     });
                   },
                   child: const Text('Guardar cambios'),
@@ -852,7 +1020,14 @@ class _PantallaConductoresState extends State<PantallaConductores> {
 
     final repartidoresActualizados = [..._conductores];
     repartidoresActualizados[index] = repartidorActualizado;
-    await guardarConductoresVinculados(repartidoresActualizados);
+    if (Firebase.apps.isNotEmpty) {
+      await guardarConductoresVinculados(repartidoresActualizados);
+      await actualizarTelefonoPerfilPorAdmin(
+        email: repartidorActualizado['correo'] ?? '',
+        nombre: repartidorActualizado['nombre'] ?? '',
+        telefono: repartidorActualizado['telefono'] ?? '',
+      );
+    }
 
     if (!mounted) {
       return;
@@ -1025,19 +1200,48 @@ class _PantallaConductoresState extends State<PantallaConductores> {
         ..._conductores.asMap().entries.map((entry) {
           final index = entry.key;
           final conductor = entry.value;
+          final correo = _normalizarCorreo(conductor['correo'] ?? '');
+          final contrasenaVisible =
+              _contrasenasVisibles[correo] ??
+              conductor['contrasenaTemporal'] ??
+              '****';
           return Card(
             margin: const EdgeInsets.only(bottom: 12),
-            child: ListTile(
-              leading: const Icon(Icons.person_outline, color: Colors.green),
-              title: Text(conductor['nombre'] ?? ''),
-              subtitle: Text(
-                '${conductor['rut'] ?? ''}\n${conductor['correo'] ?? ''}\n${conductor['telefono'] ?? ''}\nRol: ${conductor['rol'] ?? RolUsuario.repartidor.valor}',
-              ),
-              isThreeLine: true,
-              trailing: IconButton(
-                tooltip: 'Editar repartidor',
-                onPressed: () => _editarRepartidor(index),
-                icon: const Icon(Icons.edit_outlined),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 4),
+                    child: Icon(Icons.person_outline, color: Colors.green),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          conductor['nombre'] ?? '',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${conductor['rut'] ?? ''}\n'
+                          '${conductor['correo'] ?? ''}\n'
+                          '${conductor['telefono'] ?? ''}\n'
+                          'Rol: ${conductor['rol'] ?? RolUsuario.repartidor.valor}\n'
+                          'Contrasena: $contrasenaVisible',
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Editar repartidor',
+                    onPressed: () => _editarRepartidor(index),
+                    icon: const Icon(Icons.edit_outlined),
+                  ),
+                ],
               ),
             ),
           );
@@ -1823,16 +2027,36 @@ class PantallaModuloEnDesarrollo extends StatelessWidget {
 // ==========================================
 // PANTALLA PERFIL
 // ==========================================
-class PantallaPerfil extends StatelessWidget {
-  const PantallaPerfil({super.key});
+class PantallaPerfilLegacy extends StatelessWidget {
+  const PantallaPerfilLegacy({super.key});
 
   Future<void> _cerrarSesion(BuildContext context) async {
-    await FirebaseAuth.instance.signOut();
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Cerrar sesion'),
+          content: const Text('¿Quieres cerrar tu sesion?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.logout),
+              label: const Text('Cerrar sesion'),
+            ),
+          ],
+        );
+      },
+    );
 
-    if (!context.mounted) return;
+    if (confirmar != true || !context.mounted) return;
 
     // Limpia las pantallas abiertas para dejar visible el login.
     Navigator.of(context).popUntil((route) => route.isFirst);
+    await FirebaseAuth.instance.signOut();
   }
 
   @override
@@ -2040,6 +2264,150 @@ class PantallaDashboard extends StatelessWidget {
                     ),
                   ],
                 ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class PantallaCambioContrasenaObligatorio extends StatefulWidget {
+  const PantallaCambioContrasenaObligatorio({super.key});
+
+  @override
+  State<PantallaCambioContrasenaObligatorio> createState() =>
+      _PantallaCambioContrasenaObligatorioState();
+}
+
+class _PantallaCambioContrasenaObligatorioState
+    extends State<PantallaCambioContrasenaObligatorio> {
+  final _formKey = GlobalKey<FormState>();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+  bool _isSaving = false;
+  String? _errorMessage;
+
+  @override
+  void dispose() {
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _cambiarContrasena() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        throw FirebaseAuthException(
+          code: 'no-current-user',
+          message: 'No hay una sesion activa.',
+        );
+      }
+
+      await user.updatePassword(_passwordController.text.trim());
+      await marcarContrasenaCambiada(user: user);
+
+      if (!mounted) {
+        return;
+      }
+
+      Navigator.of(context).pushReplacementNamed('/mi-ruta');
+    } on FirebaseAuthException catch (e) {
+      setState(() {
+        _isSaving = false;
+        _errorMessage = 'Error: ${e.message}';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Cambiar contrasena'),
+        backgroundColor: Colors.green[800],
+        foregroundColor: Colors.white,
+        automaticallyImplyLeading: false,
+      ),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Icon(Icons.lock_reset, size: 72, color: Colors.green),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Debes cambiar tu contrasena antes de continuar.',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  TextFormField(
+                    controller: _passwordController,
+                    decoration: const InputDecoration(
+                      labelText: 'Nueva contrasena',
+                      prefixIcon: Icon(Icons.lock),
+                    ),
+                    obscureText: true,
+                    validator: (v) => (v == null || v.trim().length < 6)
+                        ? 'Minimo 6 caracteres'
+                        : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _confirmPasswordController,
+                    decoration: const InputDecoration(
+                      labelText: 'Confirmar contrasena',
+                      prefixIcon: Icon(Icons.lock_outline),
+                    ),
+                    obscureText: true,
+                    validator: (v) => (v != _passwordController.text)
+                        ? 'Las contrasenas no coinciden'
+                        : null,
+                  ),
+                  const SizedBox(height: 20),
+                  if (_errorMessage != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Text(
+                        _errorMessage!,
+                        style: const TextStyle(
+                          color: Colors.red,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  FilledButton(
+                    onPressed: _isSaving ? null : _cambiarContrasena,
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      backgroundColor: Colors.green[700],
+                    ),
+                    child: _isSaving
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : const Text(
+                            'Guardar nueva contrasena',
+                            style: TextStyle(fontSize: 16),
+                          ),
+                  ),
+                ],
               ),
             ),
           ),

@@ -93,6 +93,52 @@ Future<void> guardarRolUsuario(RolUsuario rol, {User? user}) async {
   }
 }
 
+Future<bool> debeCambiarContrasena({User? user}) async {
+  final identificador = usuarioRolKey(user: user);
+
+  if (identificador == 'local') {
+    return false;
+  }
+
+  try {
+    final doc = await _firestore
+        .collection('roles_usuarios')
+        .doc(identificador)
+        .get();
+    return doc.data()?['debeCambiarContrasena'] == true;
+  } catch (_) {
+    return false;
+  }
+}
+
+Future<void> guardarCambioContrasenaRequerido({
+  required String email,
+  required String contrasenaTemporal,
+}) async {
+  final identificador = email.toLowerCase().trim();
+
+  await _firestore.collection('roles_usuarios').doc(identificador).set({
+    'rol': RolUsuario.repartidor.valor,
+    'debeCambiarContrasena': true,
+    'contrasenaTemporalVisible': contrasenaTemporal,
+    'actualizado': DateTime.now().toIso8601String(),
+  }, SetOptions(merge: true));
+}
+
+Future<void> marcarContrasenaCambiada({User? user}) async {
+  final identificador = usuarioRolKey(user: user);
+
+  if (identificador == 'local') {
+    return;
+  }
+
+  await _firestore.collection('roles_usuarios').doc(identificador).set({
+    'debeCambiarContrasena': false,
+    'contrasenaTemporalVisible': '****',
+    'actualizado': DateTime.now().toIso8601String(),
+  }, SetOptions(merge: true));
+}
+
 bool puedeAdministrar(RolUsuario rol) => rol == RolUsuario.admin;
 
 String nombreUsuarioActual() {
