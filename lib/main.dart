@@ -7,12 +7,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'firebase_options.dart';
+import 'menu_drawer.dart';
 import 'persistencia_rutas.dart';
 import 'pantalla_ruta.dart';
 import 'pantalla_asignacion_ruta.dart';
 import 'roles.dart';
 import 'pantalla_monitoreo_entregas.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; 
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 String _empresaUsuarioKey() => empresaUsuarioKey();
 
@@ -29,10 +30,15 @@ Future<Map<String, String>?> _cargarEmpresaVinculada() async {
 
     if (identificador != null) {
       // 1. Intentar cargar los datos desde la nube (Firestore)
-      final doc = await _firestore.collection('empresas_usuarios').doc(identificador).get();
+      final doc = await _firestore
+          .collection('empresas_usuarios')
+          .doc(identificador)
+          .get();
       if (doc.exists && doc.data() != null) {
         final Map<String, dynamic> data = doc.data()!;
-        final Map<String, String> empresa = data.map((key, value) => MapEntry(key, value.toString()));
+        final Map<String, String> empresa = data.map(
+          (key, value) => MapEntry(key, value.toString()),
+        );
 
         // Actualizamos el respaldo en SharedPreferences por si acaso
         final prefs = await SharedPreferences.getInstance();
@@ -72,13 +78,13 @@ Future<void> _guardarEmpresaVinculada(Map<String, String> empresa) async {
     final identificador = user?.email?.toLowerCase().trim() ?? user?.uid;
 
     if (identificador != null) {
-      await _firestore.collection('empresas_usuarios').doc(identificador).set(
-        empresa,
-        SetOptions(merge: true),
-      );
+      await _firestore
+          .collection('empresas_usuarios')
+          .doc(identificador)
+          .set(empresa, SetOptions(merge: true));
     }
   } catch (e) {
-    print('Error al guardar la empresa en Firestore: $e');
+    debugPrint('Error al guardar la empresa en Firestore: $e');
   }
 }
 
@@ -157,9 +163,8 @@ class RuteandoApp extends StatelessWidget {
             const PantallaProtegidaAdmin(pantalla: PantallaRuta()),
         '/asignacion-rutas': (context) =>
             const PantallaProtegidaAdmin(pantalla: PantallaAsignacionRuta()),
-        '/monitoreo-entregas': (context) => const PantallaProtegidaAdmin(
-          pantalla: PantallaMonitoreoEntregas(),
-        ),
+        '/monitoreo-entregas': (context) =>
+            const PantallaProtegidaAdmin(pantalla: PantallaMonitoreoEntregas()),
         '/inventario': (context) => const PantallaProtegidaAdmin(
           pantalla: PantallaModuloEnDesarrollo(titulo: 'Inventario'),
         ),
@@ -223,135 +228,8 @@ class PantallaProtegidaAdmin extends StatelessWidget {
   }
 }
 
-Widget _buildMenuDrawer(BuildContext context) {
-  Future<void> cerrarSesion() async {
-    Navigator.pop(context);
-    await FirebaseAuth.instance.signOut();
-  }
-
-  void abrir(Widget pantalla) {
-    Navigator.pop(context);
-    Navigator.of(
-      context,
-    ).pushReplacement(MaterialPageRoute<void>(builder: (context) => pantalla));
-  }
-
-  return _DrawerPorRol(abrir: abrir, cerrarSesion: cerrarSesion);
-}
-
-class _DrawerPorRol extends StatelessWidget {
-  const _DrawerPorRol({required this.abrir, required this.cerrarSesion});
-
-  final void Function(Widget pantalla) abrir;
-  final Future<void> Function() cerrarSesion;
-
-  @override
-  Widget build(BuildContext context) {
-    return Drawer(
-      child: SafeArea(
-        child: FutureBuilder<RolUsuario>(
-          future: cargarRolUsuario(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-            final rol = snapshot.data ?? RolUsuario.admin;
-            final esAdmin = puedeAdministrar(rol);
-
-            return Column(
-              children: [
-                DrawerHeader(
-                  margin: EdgeInsets.zero,
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 28,
-                        backgroundColor: Colors.green[100],
-                        child: Icon(
-                          Icons.local_shipping,
-                          color: Colors.green[800],
-                          size: 32,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Text(
-                          'Bienvenido, ${nombreUsuarioActual()}',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (esAdmin) ...[
-                  ListTile(
-                    leading: const Icon(Icons.home_outlined),
-                    title: const Text('Inicio'),
-                    onTap: () => abrir(const PantallaPrincipal()),
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.alt_route),
-                    title: const Text('Rutas'),
-                    onTap: () => abrir(const PantallaRuta()),
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.assignment_outlined),
-                    title: const Text('Asignación de Ruta'),
-                    onTap: () => abrir(const PantallaAsignacionRuta()),
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.monitor_heart_outlined),
-                    title: const Text('Monitoreo de Entregas'),
-                    onTap: () => abrir(const PantallaMonitoreoEntregas()),
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.people_alt_outlined),
-                    title: const Text('Repartidores'),
-                    onTap: () => abrir(const PantallaConductores()),
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.inventory_2_outlined),
-                    title: const Text('Inventario'),
-                    onTap: () => abrir(
-                      const PantallaModuloEnDesarrollo(titulo: 'Inventario'),
-                    ),
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.business_outlined),
-                    title: const Text('Empresas'),
-                    onTap: () => abrir(const PantallaRegistroEmpresa()),
-                  ),
-                ] else ...[
-                  ListTile(
-                    leading: const Icon(Icons.route_outlined),
-                    title: const Text('Mi ruta asignada'),
-                    onTap: () => abrir(const PantallaRutaAsignada()),
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.fact_check_outlined),
-                    title: const Text('Estado de entregas'),
-                    onTap: () => abrir(const PantallaRutaAsignada()),
-                  ),
-                ],
-                const Spacer(),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.logout),
-                  title: const Text('Cerrar sesion'),
-                  onTap: cerrarSesion,
-                ),
-              ],
-            );
-          },
-        ),
-      ),
-    );
-  }
+Widget _buildMenuDrawer(BuildContext context, {String? currentRoute}) {
+  return AppMenuDrawer(currentRoute: currentRoute);
 }
 
 List<Widget> _accionesPerfil(BuildContext context) {
@@ -995,7 +873,7 @@ class _PantallaConductoresState extends State<PantallaConductores> {
         foregroundColor: Colors.white,
         actions: _accionesPerfil(context),
       ),
-      drawer: _buildMenuDrawer(context),
+      drawer: _buildMenuDrawer(context, currentRoute: '/repartidores'),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -1330,7 +1208,7 @@ class _PantallaRegistroEmpresaState extends State<PantallaRegistroEmpresa> {
         foregroundColor: Colors.white,
         actions: _accionesPerfil(context),
       ),
-      drawer: _buildMenuDrawer(context),
+      drawer: _buildMenuDrawer(context, currentRoute: '/empresa'),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -1575,7 +1453,7 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
         foregroundColor: Colors.white,
         actions: _accionesPerfil(context),
       ),
-      drawer: _buildMenuDrawer(context),
+      drawer: _buildMenuDrawer(context, currentRoute: '/mi-ruta'),
       body: SafeArea(
         child: Center(
           child: _cargando
@@ -1927,7 +1805,7 @@ class PantallaModuloEnDesarrollo extends StatelessWidget {
         foregroundColor: Colors.white,
         actions: _accionesPerfil(context),
       ),
-      drawer: _buildMenuDrawer(context),
+      drawer: _buildMenuDrawer(context, currentRoute: '/inventario'),
       body: const Center(
         child: Padding(
           padding: EdgeInsets.all(24),

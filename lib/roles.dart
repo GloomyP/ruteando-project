@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 enum RolUsuario {
@@ -21,10 +22,8 @@ enum RolUsuario {
 }
 
 // Conectamos a tu base de datos específica "ruteando"
-FirebaseFirestore get _firestore => FirebaseFirestore.instanceFor(
-      app: Firebase.app(),
-      databaseId: 'ruteando',
-    );
+FirebaseFirestore get _firestore =>
+    FirebaseFirestore.instanceFor(app: Firebase.app(), databaseId: 'ruteando');
 
 String usuarioRolKey({User? user}) {
   User? usuario;
@@ -33,7 +32,7 @@ String usuarioRolKey({User? user}) {
   } catch (_) {
     // Firebase no inicializado en tests de widgets.
   }
-  
+
   // Usamos el correo como llave única en la base de datos
   final identificador = usuario?.email?.toLowerCase().trim() ?? usuario?.uid;
 
@@ -46,19 +45,22 @@ String usuarioRolKey({User? user}) {
 
 Future<RolUsuario> cargarRolUsuario({User? user}) async {
   final identificador = usuarioRolKey(user: user);
-  
+
   if (identificador != 'local') {
     try {
       // 1. Intentar cargar el rol desde la nube (Firestore)
-      final doc = await _firestore.collection('roles_usuarios').doc(identificador).get();
+      final doc = await _firestore
+          .collection('roles_usuarios')
+          .doc(identificador)
+          .get();
       if (doc.exists && doc.data() != null) {
         final rolString = doc.data()!['rol'] as String?;
         final rol = RolUsuario.desdeValor(rolString);
-        
+
         // Actualizar el caché local de respaldo
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('rol_usuario_$identificador', rol.valor);
-        
+
         return rol;
       }
     } catch (_) {
@@ -73,7 +75,7 @@ Future<RolUsuario> cargarRolUsuario({User? user}) async {
 
 Future<void> guardarRolUsuario(RolUsuario rol, {User? user}) async {
   final identificador = usuarioRolKey(user: user);
-  
+
   // 1. Guardar localmente (caché)
   final prefs = await SharedPreferences.getInstance();
   await prefs.setString('rol_usuario_$identificador', rol.valor);
@@ -86,7 +88,7 @@ Future<void> guardarRolUsuario(RolUsuario rol, {User? user}) async {
         'actualizado': DateTime.now().toIso8601String(),
       }, SetOptions(merge: true));
     } catch (e) {
-      print('Error guardando rol en la nube: $e');
+      debugPrint('Error guardando rol en la nube: $e');
     }
   }
 }

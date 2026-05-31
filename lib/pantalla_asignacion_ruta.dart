@@ -2,7 +2,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'roles.dart';
 import 'persistencia_rutas.dart';
-import 'pantalla_ruta.dart';
 import 'pantalla_perfil.dart';
 
 class PantallaAsignacionRuta extends StatefulWidget {
@@ -24,7 +23,7 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
 
   Future<void> _cargarDatos() async {
     setState(() => _cargando = true);
-    
+
     // Cargar asignaciones globales
     final asignacionesRaw = await cargarAsignacionesGlobales();
     final List<Map<String, dynamic>> asignacionesActualizadas = [];
@@ -55,7 +54,9 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
       builder: (dialogContext) {
         return AlertDialog(
           title: const Text('Eliminar asignación'),
-          content: Text('¿Estás seguro de que quieres eliminar la ruta asignada a $nombre?'),
+          content: Text(
+            '¿Estás seguro de que quieres eliminar la ruta asignada a $nombre?',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -201,7 +202,8 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
                     ListTile(
                       leading: const Icon(Icons.monitor_heart_outlined),
                       title: const Text('Monitoreo de Entregas'),
-                      onTap: () => _abrirPantalla(context, '/monitoreo-entregas'),
+                      onTap: () =>
+                          _abrirPantalla(context, '/monitoreo-entregas'),
                     ),
                     ListTile(
                       leading: const Icon(Icons.people_alt_outlined),
@@ -258,7 +260,8 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
       ),
       floatingActionButton: _asignaciones.isNotEmpty
           ? FloatingActionButton.extended(
-              onPressed: () => Navigator.of(context).pushReplacementNamed('/rutas'),
+              onPressed: () =>
+                  Navigator.of(context).pushReplacementNamed('/rutas'),
               icon: const Icon(Icons.add),
               label: const Text('Nueva Asignación'),
               backgroundColor: Colors.green[700],
@@ -275,33 +278,24 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
       padding: const EdgeInsets.all(24),
       children: [
         const SizedBox(height: 48),
-        Icon(
-          Icons.assignment_outlined,
-          size: 96,
-          color: Colors.grey[400],
-        ),
+        Icon(Icons.assignment_outlined, size: 96, color: Colors.grey[400]),
         const SizedBox(height: 24),
         const Text(
           'Sin rutas asignadas hoy',
-          style: TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 12),
         Text(
           'Genera y asigna rutas optimizadas a tus repartidores para planificar la operación diaria de tu flota.',
-          style: TextStyle(
-            fontSize: 15,
-            color: Colors.grey[600],
-          ),
+          style: TextStyle(fontSize: 15, color: Colors.grey[600]),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 32),
         Center(
           child: FilledButton.icon(
-            onPressed: () => Navigator.of(context).pushReplacementNamed('/rutas'),
+            onPressed: () =>
+                Navigator.of(context).pushReplacementNamed('/rutas'),
             icon: const Icon(Icons.alt_route),
             label: const Text('Planificar y Optimizar Ruta'),
             style: FilledButton.styleFrom(
@@ -321,15 +315,18 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
       itemCount: _asignaciones.length,
       itemBuilder: (context, index) {
         final asignacion = _asignaciones[index];
-        final nombre = asignacion['repartidorNombre']?.toString() ?? 'Repartidor';
+        final nombre =
+            asignacion['repartidorNombre']?.toString() ?? 'Repartidor';
         final email = asignacion['repartidorEmail']?.toString() ?? '';
-        final origen = asignacion['origen']?.toString() ?? 'Origen no especificado';
+        final origen =
+            asignacion['origen']?.toString() ?? 'Origen no especificado';
         final paradasList = asignacion['paradas'] as List? ?? [];
-        
+
         // Calcular estadísticas de paradas
         final total = paradasList.length;
-        final entregados = paradasList.where((p) => (p as Map)['estado'] == 'Entregado').length;
-        final enCamino = paradasList.where((p) => (p as Map)['estado'] == 'En camino').length;
+        final entregados = paradasList
+            .where((p) => (p as Map)['estado'] == 'Entregado')
+            .length;
         final porcentaje = total > 0 ? entregados / total : 0.0;
 
         return Card(
@@ -399,7 +396,11 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.trip_origin, size: 16, color: Colors.green),
+                    const Icon(
+                      Icons.trip_origin,
+                      size: 16,
+                      color: Colors.green,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -433,15 +434,25 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
                   children: [
                     Text(
                       'Distancia: ${asignacion['distancia'] ?? 'N/A'}',
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                     Text(
                       'Tiempo: ${asignacion['tiempo'] ?? 'N/A'}',
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                     Text(
                       'Optimización: ${asignacion['criterio'] ?? 'N/A'}',
-                      style: const TextStyle(fontSize: 12, color: Colors.blueAccent, fontWeight: FontWeight.w500),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.blueAccent,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ],
                 ),
@@ -461,7 +472,9 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
-                        color: entregados == total ? Colors.green : Colors.orange,
+                        color: entregados == total
+                            ? Colors.green
+                            : Colors.orange,
                       ),
                     ),
                   ],
@@ -479,11 +492,16 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
                 const SizedBox(height: 12),
                 // Lista compacta de paradas
                 Theme(
-                  data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                  data: Theme.of(
+                    context,
+                  ).copyWith(dividerColor: Colors.transparent),
                   child: ExpansionTile(
                     title: const Text(
                       'Ver paradas intermedias',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                     dense: true,
                     tilePadding: EdgeInsets.zero,
@@ -491,8 +509,9 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
                       final idx = entry.key;
                       final parada = entry.value as Map;
                       final texto = parada['texto']?.toString() ?? '';
-                      final estado = parada['estado']?.toString() ?? 'Pendiente';
-                      
+                      final estado =
+                          parada['estado']?.toString() ?? 'Pendiente';
+
                       Color estadoColor = Colors.grey;
                       IconData estadoIcon = Icons.pending_outlined;
                       if (estado == 'En camino') {
@@ -512,7 +531,11 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
                               backgroundColor: Colors.green[50],
                               child: Text(
                                 '${idx + 1}',
-                                style: TextStyle(fontSize: 10, color: Colors.green[800], fontWeight: FontWeight.bold),
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.green[800],
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -525,19 +548,30 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
                               ),
                             ),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
-                                color: estadoColor.withOpacity(0.1),
+                                color: estadoColor.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(estadoIcon, size: 10, color: estadoColor),
+                                  Icon(
+                                    estadoIcon,
+                                    size: 10,
+                                    color: estadoColor,
+                                  ),
                                   const SizedBox(width: 4),
                                   Text(
                                     estado,
-                                    style: TextStyle(fontSize: 10, color: estadoColor, fontWeight: FontWeight.bold),
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: estadoColor,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ],
                               ),
