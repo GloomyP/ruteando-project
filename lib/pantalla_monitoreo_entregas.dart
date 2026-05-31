@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'roles.dart';
+import 'menu_drawer.dart';
 import 'persistencia_rutas.dart';
 import 'pantalla_perfil.dart';
 
@@ -9,7 +8,8 @@ class PantallaMonitoreoEntregas extends StatefulWidget {
   const PantallaMonitoreoEntregas({super.key});
 
   @override
-  State<PantallaMonitoreoEntregas> createState() => _PantallaMonitoreoEntregasState();
+  State<PantallaMonitoreoEntregas> createState() =>
+      _PantallaMonitoreoEntregasState();
 }
 
 class _PantallaMonitoreoEntregasState extends State<PantallaMonitoreoEntregas> {
@@ -82,6 +82,7 @@ class _PantallaMonitoreoEntregasState extends State<PantallaMonitoreoEntregas> {
           ),
         ],
       ),
+      drawer: const AppMenuDrawer(currentRoute: '/monitoreo-entregas'),
       body: _cargandoInicial
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
@@ -128,14 +129,19 @@ class _PantallaMonitoreoEntregasState extends State<PantallaMonitoreoEntregas> {
       itemCount: _asignacionesActivas.length,
       itemBuilder: (context, index) {
         final asignacion = _asignacionesActivas[index];
-        final nombre = asignacion['repartidorNombre']?.toString() ?? 'Repartidor';
+        final nombre =
+            asignacion['repartidorNombre']?.toString() ?? 'Repartidor';
         final paradasList = asignacion['paradas'] as List? ?? [];
-        
+
         final total = paradasList.length;
-        final entregados = paradasList.where((p) => (p as Map)['estado'] == 'Entregado').length;
-        final enCamino = paradasList.where((p) => (p as Map)['estado'] == 'En camino').length;
+        final entregados = paradasList
+            .where((p) => (p as Map)['estado'] == 'Entregado')
+            .length;
+        final enCamino = paradasList
+            .where((p) => (p as Map)['estado'] == 'En camino')
+            .length;
         final pendientes = total - entregados - enCamino;
-        
+
         final porcentaje = total > 0 ? entregados / total : 0.0;
         final completada = entregados == total && total > 0;
 
@@ -157,9 +163,15 @@ class _PantallaMonitoreoEntregasState extends State<PantallaMonitoreoEntregas> {
                 Row(
                   children: [
                     CircleAvatar(
-                      backgroundColor: completada ? Colors.green[200] : Colors.blue[100],
-                      foregroundColor: completada ? Colors.green[800] : Colors.blue[800],
-                      child: Icon(completada ? Icons.check_circle : Icons.local_shipping),
+                      backgroundColor: completada
+                          ? Colors.green[200]
+                          : Colors.blue[100],
+                      foregroundColor: completada
+                          ? Colors.green[800]
+                          : Colors.blue[800],
+                      child: Icon(
+                        completada ? Icons.check_circle : Icons.local_shipping,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -168,14 +180,19 @@ class _PantallaMonitoreoEntregasState extends State<PantallaMonitoreoEntregas> {
                         children: [
                           Text(
                             nombre,
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                           Text(
                             completada ? 'Ruta finalizada' : 'En ruta',
                             style: TextStyle(
-                              fontSize: 12, 
-                              color: completada ? Colors.green[700] : Colors.blue[700],
-                              fontWeight: FontWeight.w600
+                              fontSize: 12,
+                              color: completada
+                                  ? Colors.green[700]
+                                  : Colors.blue[700],
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ],
@@ -183,8 +200,11 @@ class _PantallaMonitoreoEntregasState extends State<PantallaMonitoreoEntregas> {
                     ),
                     Text(
                       '${(porcentaje * 100).toStringAsFixed(0)}%',
-                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                    )
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -201,19 +221,36 @@ class _PantallaMonitoreoEntregasState extends State<PantallaMonitoreoEntregas> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    _IndicadorEstado(etiqueta: 'Pendientes', valor: pendientes, color: Colors.grey),
-                    _IndicadorEstado(etiqueta: 'En Camino', valor: enCamino, color: Colors.orange),
-                    _IndicadorEstado(etiqueta: 'Entregadas', valor: entregados, color: Colors.green),
+                    _IndicadorEstado(
+                      etiqueta: 'Pendientes',
+                      valor: pendientes,
+                      color: Colors.grey,
+                    ),
+                    _IndicadorEstado(
+                      etiqueta: 'En Camino',
+                      valor: enCamino,
+                      color: Colors.orange,
+                    ),
+                    _IndicadorEstado(
+                      etiqueta: 'Entregadas',
+                      valor: entregados,
+                      color: Colors.green,
+                    ),
                   ],
                 ),
                 const Divider(height: 24),
                 // --- Aquí integramos el detalle desplegable ---
                 Theme(
-                  data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                  data: Theme.of(
+                    context,
+                  ).copyWith(dividerColor: Colors.transparent),
                   child: ExpansionTile(
                     title: const Text(
                       'Ver paradas intermedias',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                     dense: true,
                     tilePadding: EdgeInsets.zero,
@@ -221,8 +258,9 @@ class _PantallaMonitoreoEntregasState extends State<PantallaMonitoreoEntregas> {
                       final idx = entry.key;
                       final parada = entry.value as Map;
                       final texto = parada['texto']?.toString() ?? '';
-                      final estado = parada['estado']?.toString() ?? 'Pendiente';
-                      
+                      final estado =
+                          parada['estado']?.toString() ?? 'Pendiente';
+
                       Color estadoColor = Colors.grey;
                       IconData estadoIcon = Icons.pending_outlined;
                       if (estado == 'En camino') {
@@ -242,7 +280,11 @@ class _PantallaMonitoreoEntregasState extends State<PantallaMonitoreoEntregas> {
                               backgroundColor: Colors.green[50],
                               child: Text(
                                 '${idx + 1}',
-                                style: TextStyle(fontSize: 10, color: Colors.green[800], fontWeight: FontWeight.bold),
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.green[800],
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -255,19 +297,30 @@ class _PantallaMonitoreoEntregasState extends State<PantallaMonitoreoEntregas> {
                               ),
                             ),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
-                                color: estadoColor.withOpacity(0.1),
+                                color: estadoColor.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(estadoIcon, size: 10, color: estadoColor),
+                                  Icon(
+                                    estadoIcon,
+                                    size: 10,
+                                    color: estadoColor,
+                                  ),
                                   const SizedBox(width: 4),
                                   Text(
                                     estado,
-                                    style: TextStyle(fontSize: 10, color: estadoColor, fontWeight: FontWeight.bold),
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: estadoColor,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -304,12 +357,13 @@ class _IndicadorEstado extends StatelessWidget {
       children: [
         Text(
           valor.toString(),
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: color),
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
         ),
-        Text(
-          etiqueta,
-          style: TextStyle(fontSize: 12, color: Colors.grey[700]),
-        ),
+        Text(etiqueta, style: TextStyle(fontSize: 12, color: Colors.grey[700])),
       ],
     );
   }
