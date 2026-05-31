@@ -9,7 +9,8 @@ class AppMenuDrawer extends StatelessWidget {
   final String? currentRoute;
 
   Future<void> _abrirRuta(BuildContext context, String routeName) async {
-    Navigator.pop(context);
+    final navigator = Navigator.of(context);
+    navigator.pop();
 
     if (routeName == currentRoute) {
       return;
@@ -18,11 +19,36 @@ class AppMenuDrawer extends StatelessWidget {
     final rol = await cargarRolUsuario();
     final esRutaAdmin = routeName != '/mi-ruta';
     if (esRutaAdmin && !puedeAdministrar(rol)) {
-      if (!context.mounted) {
-        return;
-      }
+      navigator.pushReplacementNamed('/mi-ruta');
+      return;
+    }
 
-      Navigator.of(context).pushReplacementNamed('/mi-ruta');
+    navigator.pushReplacementNamed(routeName);
+  }
+
+  Future<void> _cerrarSesion(BuildContext context) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Cerrar sesion'),
+          content: const Text('¿Quieres cerrar tu sesion de forma segura?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.logout),
+              label: const Text('Cerrar sesion'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmar != true) {
       return;
     }
 
@@ -30,12 +56,9 @@ class AppMenuDrawer extends StatelessWidget {
       return;
     }
 
-    Navigator.of(context).pushReplacementNamed(routeName);
-  }
-
-  Future<void> _cerrarSesion(BuildContext context) async {
-    Navigator.pop(context);
-    Navigator.of(context).popUntil((route) => route.isFirst);
+    final navigator = Navigator.of(context);
+    navigator.pop();
+    navigator.popUntil((route) => route.isFirst);
     await FirebaseAuth.instance.signOut();
   }
 
