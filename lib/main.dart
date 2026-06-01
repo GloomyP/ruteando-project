@@ -20,19 +20,29 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 String _empresaUsuarioKey() => empresaUsuarioKey();
 
 class _EstadoSesion {
-  const _EstadoSesion({required this.rol, required this.debeCambiarContrasena});
+  const _EstadoSesion({
+    required this.rol,
+    required this.debeCambiarContrasena,
+    required this.cuentaDeshabilitada,
+  });
 
   final RolUsuario rol;
   final bool debeCambiarContrasena;
+  final bool cuentaDeshabilitada;
 }
 
 Future<_EstadoSesion> _cargarEstadoSesion(User user) async {
+  final deshabilitado = await usuarioDeshabilitado(user: user);
   final rol = await cargarRolUsuario(user: user);
   final requiereCambio = rol == RolUsuario.repartidor
       ? await debeCambiarContrasena(user: user)
       : false;
 
-  return _EstadoSesion(rol: rol, debeCambiarContrasena: requiereCambio);
+  return _EstadoSesion(
+    rol: rol,
+    debeCambiarContrasena: requiereCambio,
+    cuentaDeshabilitada: deshabilitado,
+  );
 }
 
 // Inicializamos la instancia conectada a tu base de datos específica "ruteando"
@@ -214,7 +224,12 @@ class RuteandoApp extends StatelessWidget {
                     const _EstadoSesion(
                       rol: RolUsuario.admin,
                       debeCambiarContrasena: false,
+                      cuentaDeshabilitada: false,
                     );
+
+                if (estado.cuentaDeshabilitada) {
+                  return const PantallaCuentaDeshabilitada();
+                }
 
                 if (estado.rol == RolUsuario.repartidor) {
                   return estado.debeCambiarContrasena
@@ -701,6 +716,32 @@ class _PantallaConductoresState extends State<PantallaConductores> {
     return correo.toLowerCase().trim();
   }
 
+  String _normalizarRutParaComparar(String rut) {
+    return rut.replaceAll(RegExp(r'[^0-9kK]'), '').toUpperCase();
+  }
+
+  bool _rutYaRegistrado(String rut, {int? ignorarIndex}) {
+    final rutNormalizado = _normalizarRutParaComparar(rut);
+    if (rutNormalizado.isEmpty) {
+      return false;
+    }
+
+    for (var i = 0; i < _conductores.length; i++) {
+      if (i == ignorarIndex) {
+        continue;
+      }
+
+      final rutConductor = _normalizarRutParaComparar(
+        _conductores[i]['rut'] ?? '',
+      );
+      if (rutConductor == rutNormalizado) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   String _generarContrasenaTemporal(String nombre) {
     final nombreClave = nombre.trim().toLowerCase().replaceAll(
       RegExp(r'\s+'),
@@ -794,12 +835,21 @@ class _PantallaConductoresState extends State<PantallaConductores> {
     }
 
     final nombre = _nombreController.text.trim();
+    final rut = _rutController.text.trim();
     final correo = _normalizarCorreo(_correoController.text);
     final contrasenaTemporal = _generarContrasenaTemporal(nombre);
 
+    if (_rutYaRegistrado(rut)) {
+      setState(() {
+        _mensajeError = 'Ya existe un repartidor registrado con ese RUT.';
+        _mensajeExito = null;
+      });
+      return;
+    }
+
     final conductor = {
       'nombre': nombre,
-      'rut': _rutController.text.trim(),
+      'rut': rut,
       'correo': correo,
       'telefono': _telefonoController.text.trim(),
       'empresa': _empresa?['rut'] ?? _empresaUsuarioKey(),
@@ -894,6 +944,18 @@ class _PantallaConductoresState extends State<PantallaConductores> {
     );
     final formKey = GlobalKey<FormState>();
     var rolSeleccionado = RolUsuario.desdeValor(repartidor['rol']);
+    String? validarRutEdicion(String? valor) {
+      final rutInvalido = _validarRut(valor);
+      if (rutInvalido != null) {
+        return rutInvalido;
+      }
+
+      if (_rutYaRegistrado(valor ?? '', ignorarIndex: index)) {
+        return 'Ya existe un repartidor registrado con ese RUT.';
+      }
+
+      return null;
+    }
 
     final repartidorActualizado = await showDialog<Map<String, String>>(
       context: context,
@@ -920,7 +982,7 @@ class _PantallaConductoresState extends State<PantallaConductores> {
                         controller: rutController,
                         decoration: const InputDecoration(labelText: 'RUT'),
                         inputFormatters: [_RutInputFormatter()],
-                        validator: _validarRut,
+                        validator: validarRutEdicion,
                       ),
                       const SizedBox(height: 12),
                       TextFormField(
@@ -1022,6 +1084,16 @@ class _PantallaConductoresState extends State<PantallaConductores> {
     repartidoresActualizados[index] = repartidorActualizado;
     if (Firebase.apps.isNotEmpty) {
       await guardarConductoresVinculados(repartidoresActualizados);
+      await guardarRolUsuarioPorEmail(
+        repartidorActualizado['correo'] ?? '',
+        RolUsuario.desdeValor(repartidorActualizado['rol']),
+      );
+      if (RolUsuario.desdeValor(repartidorActualizado['rol']) ==
+          RolUsuario.admin) {
+        await vincularUsuarioAEmpresaActual(
+          repartidorActualizado['correo'] ?? '',
+        );
+      }
       await actualizarTelefonoPerfilPorAdmin(
         email: repartidorActualizado['correo'] ?? '',
         nombre: repartidorActualizado['nombre'] ?? '',
@@ -1037,6 +1109,71 @@ class _PantallaConductoresState extends State<PantallaConductores> {
       _conductores = repartidoresActualizados;
     });
     _mostrarMensajeExitoTemporal('Repartidor actualizado correctamente.');
+  }
+
+  Future<void> _eliminarRepartidor(int index) async {
+    final repartidor = _conductores[index];
+    final nombre = repartidor['nombre']?.trim() ?? 'este repartidor';
+    final correo = _normalizarCorreo(repartidor['correo'] ?? '');
+
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Eliminar repartidor'),
+          content: Text(
+            'Se eliminaran los datos, rutas y asignaciones de $nombre. '
+            'Esta accion no se puede deshacer.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Eliminar'),
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmar != true) {
+      return;
+    }
+
+    final repartidoresActualizados = [..._conductores]..removeAt(index);
+
+    try {
+      if (Firebase.apps.isNotEmpty) {
+        await guardarConductoresVinculados(repartidoresActualizados);
+        await eliminarRepartidorDeSistema(correo);
+        await deshabilitarUsuarioRepartidor(correo);
+      }
+    } on FirebaseException catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _mensajeError = 'Error al eliminar repartidor: ${e.message}';
+        _mensajeExito = null;
+      });
+      return;
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _conductores = repartidoresActualizados;
+      _contrasenasVisibles.remove(correo);
+    });
+    _mostrarMensajeExitoTemporal('Repartidor eliminado correctamente.');
   }
 
   @override
@@ -1240,6 +1377,11 @@ class _PantallaConductoresState extends State<PantallaConductores> {
                     tooltip: 'Editar repartidor',
                     onPressed: () => _editarRepartidor(index),
                     icon: const Icon(Icons.edit_outlined),
+                  ),
+                  IconButton(
+                    tooltip: 'Eliminar repartidor',
+                    onPressed: () => _eliminarRepartidor(index),
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
                   ),
                 ],
               ),
@@ -1562,8 +1704,6 @@ class PantallaRutaAsignada extends StatefulWidget {
 }
 
 class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
-  static const _estados = ['Pendiente', 'En camino', 'Entregado'];
-
   Map<String, dynamic>? _rutaAsignada;
   Map<String, dynamic>? _notificacionRuta;
   bool _cargando = true;
@@ -1610,36 +1750,83 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
     await _cargarRuta();
   }
 
-  Future<void> _actualizarEstado(int index, String nuevoEstado) async {
+  Future<void> _guardarRutaActualizada(Map<String, dynamic> ruta) async {
+    final email = _driverEmail;
+
+    await guardarRutaAsignada(email, ruta);
+
+    final globalAssignments = await cargarAsignacionesGlobales();
+    final idx = globalAssignments.indexWhere(
+      (a) => a['repartidorEmail'] == email,
+    );
+    if (idx != -1) {
+      globalAssignments[idx] = ruta;
+    } else {
+      globalAssignments.add(ruta);
+    }
+    await guardarAsignacionesGlobales(globalAssignments);
+  }
+
+  Future<void> _iniciarRecorrido() async {
     if (_rutaAsignada == null) return;
 
-    // Crear copias mutables de las paradas
     final paradas = List<Map<String, dynamic>>.from(
       (_rutaAsignada!['paradas'] as List).map(
         (p) => Map<String, dynamic>.from(p as Map),
       ),
     );
 
-    paradas[index]['estado'] = nuevoEstado;
-    _rutaAsignada!['paradas'] = paradas;
+    if (paradas.isEmpty) return;
 
-    final email = _driverEmail;
-
-    // Guardar localmente la asignación actualizada
-    await guardarRutaAsignada(email, _rutaAsignada!);
-
-    // Sincronizar en la lista global de asignaciones para el administrador
-    final globalAssignments = await cargarAsignacionesGlobales();
-    final idx = globalAssignments.indexWhere(
-      (a) => a['repartidorEmail'] == email,
-    );
-    if (idx != -1) {
-      globalAssignments[idx] = _rutaAsignada!;
-    } else {
-      globalAssignments.add(_rutaAsignada!);
+    for (final parada in paradas) {
+      if (parada['estado'] != 'Entregado') {
+        parada['estado'] = 'Pendiente';
+      }
     }
-    await guardarAsignacionesGlobales(globalAssignments);
+    final primeraPendiente = paradas.indexWhere(
+      (parada) => parada['estado'] != 'Entregado',
+    );
+    if (primeraPendiente == -1) {
+      _rutaAsignada!['estadoRecorrido'] = 'Completado';
+    } else {
+      paradas[primeraPendiente]['estado'] = 'En camino';
+      _rutaAsignada!['estadoRecorrido'] = 'En curso';
+    }
 
+    _rutaAsignada!['paradas'] = paradas;
+    await _guardarRutaActualizada(_rutaAsignada!);
+
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  Future<void> _marcarEntregado(int index) async {
+    if (_rutaAsignada == null) return;
+
+    final paradas = List<Map<String, dynamic>>.from(
+      (_rutaAsignada!['paradas'] as List).map(
+        (p) => Map<String, dynamic>.from(p as Map),
+      ),
+    );
+
+    if (index < 0 || index >= paradas.length) return;
+
+    paradas[index]['estado'] = 'Entregado';
+
+    final siguiente = paradas.indexWhere(
+      (parada) => parada['estado'] == 'Pendiente',
+    );
+    if (siguiente == -1) {
+      _rutaAsignada!['estadoRecorrido'] = 'Completado';
+    } else {
+      paradas[siguiente]['estado'] = 'En camino';
+      _rutaAsignada!['estadoRecorrido'] = 'En curso';
+    }
+
+    _rutaAsignada!['paradas'] = paradas;
+    await _guardarRutaActualizada(_rutaAsignada!);
+
+    if (!mounted) return;
     setState(() {});
   }
 
@@ -1821,6 +2008,13 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
         .where((p) => (p as Map)['estado'] == 'Entregado')
         .length;
     final porcentaje = total > 0 ? entregados / total : 0.0;
+    final estadoRecorrido =
+        _rutaAsignada!['estadoRecorrido']?.toString() ?? 'Pendiente';
+    final completado = total > 0 && entregados == total;
+    final recorridoIniciado =
+        estadoRecorrido == 'En curso' ||
+        paradas.any((p) => (p as Map)['estado'] == 'En camino') ||
+        entregados > 0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1912,10 +2106,61 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
                   child: LinearProgressIndicator(
                     value: porcentaje,
                     minHeight: 6,
-                    color: entregados == total ? Colors.green : Colors.orange,
+                    color: completado ? Colors.green : Colors.orange,
                     backgroundColor: Colors.grey[200],
                   ),
                 ),
+                const SizedBox(height: 16),
+                if (completado)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.green.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.check_circle_outline,
+                          color: Colors.green[800],
+                        ),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'Recorrido completado',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else if (!recorridoIniciado)
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: total == 0 ? null : _iniciarRecorrido,
+                      icon: const Icon(Icons.play_arrow),
+                      label: const Text('Iniciar recorrido'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.green[700],
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                    ),
+                  )
+                else
+                  const Row(
+                    children: [
+                      Icon(Icons.local_shipping_outlined, color: Colors.blue),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Recorrido en curso',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
               ],
             ),
           ),
@@ -1940,6 +2185,7 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
           final parada = paradas[index] as Map;
           final texto = parada['texto']?.toString() ?? '';
           final estado = parada['estado']?.toString() ?? 'Pendiente';
+          final esParadaActual = recorridoIniciado && estado == 'En camino';
 
           Color estadoColor = Colors.grey;
           if (estado == 'En camino') estadoColor = Colors.blue;
@@ -1959,31 +2205,31 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
               ),
               subtitle: Padding(
                 padding: const EdgeInsets.only(top: 8),
-                child: DropdownButtonFormField<String>(
-                  initialValue: estado,
-                  decoration: InputDecoration(
-                    labelText: 'Estado de entrega',
-                    isDense: true,
-                    labelStyle: TextStyle(color: estadoColor),
-                    focusedBorder: OutlineInputBorder(
-                      borderSide: BorderSide(color: estadoColor),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderSide: BorderSide(
-                        color: estadoColor.withValues(alpha: 0.5),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Chip(
+                      label: Text(estado),
+                      visualDensity: VisualDensity.compact,
+                      backgroundColor: estadoColor.withValues(alpha: 0.12),
+                      labelStyle: TextStyle(
+                        color: estadoColor,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                  ),
-                  items: _estados.map((est) {
-                    return DropdownMenuItem<String>(
-                      value: est,
-                      child: Text(est),
-                    );
-                  }).toList(),
-                  onChanged: (nuevoEst) {
-                    if (nuevoEst == null) return;
-                    _actualizarEstado(index, nuevoEst);
-                  },
+                    if (esParadaActual)
+                      FilledButton.icon(
+                        onPressed: () => _marcarEntregado(index),
+                        icon: const Icon(Icons.check),
+                        label: const Text('Entregado'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.green[700],
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),
@@ -2462,6 +2708,20 @@ class _PantallaLoginState extends State<PantallaLogin> {
         email: _email,
         password: _password,
       );
+      final deshabilitado = await usuarioDeshabilitado();
+      if (deshabilitado) {
+        await FirebaseAuth.instance.signOut();
+        if (!mounted) {
+          return;
+        }
+
+        setState(() {
+          _isLoading = false;
+          _errorMessage =
+              'Esta cuenta ya no esta vinculada a la empresa. Contacta al administrador.';
+        });
+        return;
+      }
       // No necesitamos hacer Navigator.push, el StreamBuilder de main() detectará el cambio y mostrará el Dashboard.
     } on FirebaseAuthException catch (e) {
       setState(() {
@@ -2588,6 +2848,52 @@ class _PantallaLoginState extends State<PantallaLogin> {
 // ==========================================
 // PANTALLA CREAR CONTRASEÑA (Recuperación via enlace por correo)
 // ==========================================
+class PantallaCuentaDeshabilitada extends StatelessWidget {
+  const PantallaCuentaDeshabilitada({super.key});
+
+  Future<void> _cerrarSesion() async {
+    await FirebaseAuth.instance.signOut();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Icon(Icons.block, size: 72, color: Colors.red),
+                const SizedBox(height: 20),
+                const Text(
+                  'Cuenta no disponible',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Esta cuenta ya no esta vinculada a la empresa.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                FilledButton.icon(
+                  onPressed: _cerrarSesion,
+                  icon: const Icon(Icons.logout),
+                  label: const Text('Volver al inicio de sesion'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class PantallaCrearContrasena extends StatefulWidget {
   const PantallaCrearContrasena({super.key});
   @override

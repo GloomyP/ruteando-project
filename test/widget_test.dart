@@ -216,6 +216,23 @@ void main() {
     expect(find.textContaining('11.111.111-1'), findsOneWidget);
     expect(find.text('No hay repartidores registrados.'), findsNothing);
 
+    await tester.enterText(find.byType(TextFormField).at(0), 'Juan Duplicado');
+    await tester.enterText(find.byType(TextFormField).at(1), '111111111');
+    await tester.enterText(
+      find.byType(TextFormField).at(2),
+      'duplicado@test.cl',
+    );
+    await tester.enterText(find.byType(TextFormField).at(3), '+56933333333');
+    await tester.ensureVisible(find.text('Registrar repartidor'));
+    await tester.tap(find.text('Registrar repartidor'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Ya existe un repartidor registrado con ese RUT.'),
+      findsOneWidget,
+    );
+    expect(find.text('Asociar persona'), findsNothing);
+
     await tester.ensureVisible(find.byTooltip('Editar repartidor'));
     await tester.tap(find.byTooltip('Editar repartidor'));
     await tester.pumpAndSettle();
@@ -226,19 +243,21 @@ void main() {
     await tester.tap(find.text('Guardar cambios'));
     await tester.pumpAndSettle();
     expect(find.text('Repartidor actualizado correctamente.'), findsOneWidget);
-
-    await tester.enterText(find.byType(TextFormField).at(0), 'Maria Soto');
-    await tester.enterText(find.byType(TextFormField).at(1), '222222222');
-    await tester.enterText(find.byType(TextFormField).at(2), 'maria@test.cl');
-    await tester.enterText(find.byType(TextFormField).at(3), '+56922222222');
-    await tester.ensureVisible(find.text('Registrar repartidor'));
-    await tester.tap(find.text('Registrar repartidor'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Confirmar'));
-    await tester.pumpAndSettle();
+    expect(find.textContaining('Rol: admin'), findsOneWidget);
 
     expect(find.text('Juan Perez'), findsOneWidget);
-    expect(find.text('Maria Soto'), findsOneWidget);
     expect(find.text('Repartidores registrados'), findsOneWidget);
+
+    await tester.ensureVisible(find.byTooltip('Eliminar repartidor').first);
+    await tester.tap(find.byTooltip('Eliminar repartidor').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Eliminar repartidor'), findsOneWidget);
+
+    await tester.tap(find.text('Eliminar'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Repartidor eliminado correctamente.'), findsOneWidget);
+    expect(find.text('Juan Perez'), findsNothing);
+    expect(find.text('No hay repartidores registrados.'), findsOneWidget);
   });
 }

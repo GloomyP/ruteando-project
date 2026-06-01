@@ -93,6 +93,26 @@ Future<void> guardarRolUsuario(RolUsuario rol, {User? user}) async {
   }
 }
 
+Future<void> guardarRolUsuarioPorEmail(String email, RolUsuario rol) async {
+  final identificador = email.toLowerCase().trim();
+  if (identificador.isEmpty) {
+    return;
+  }
+
+  await _firestore.collection('roles_usuarios').doc(identificador).set({
+    'rol': rol.valor,
+    'deshabilitado': false,
+    if (rol == RolUsuario.admin) ...{
+      'debeCambiarContrasena': false,
+      'contrasenaTemporalVisible': '****',
+    },
+    'actualizado': DateTime.now().toIso8601String(),
+  }, SetOptions(merge: true));
+
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString('rol_usuario_$identificador', rol.valor);
+}
+
 Future<bool> debeCambiarContrasena({User? user}) async {
   final identificador = usuarioRolKey(user: user);
 
@@ -111,6 +131,24 @@ Future<bool> debeCambiarContrasena({User? user}) async {
   }
 }
 
+Future<bool> usuarioDeshabilitado({User? user}) async {
+  final identificador = usuarioRolKey(user: user);
+
+  if (identificador == 'local') {
+    return false;
+  }
+
+  try {
+    final doc = await _firestore
+        .collection('roles_usuarios')
+        .doc(identificador)
+        .get();
+    return doc.data()?['deshabilitado'] == true;
+  } catch (_) {
+    return false;
+  }
+}
+
 Future<void> guardarCambioContrasenaRequerido({
   required String email,
   required String contrasenaTemporal,
@@ -119,8 +157,24 @@ Future<void> guardarCambioContrasenaRequerido({
 
   await _firestore.collection('roles_usuarios').doc(identificador).set({
     'rol': RolUsuario.repartidor.valor,
+    'deshabilitado': false,
     'debeCambiarContrasena': true,
     'contrasenaTemporalVisible': contrasenaTemporal,
+    'actualizado': DateTime.now().toIso8601String(),
+  }, SetOptions(merge: true));
+}
+
+Future<void> deshabilitarUsuarioRepartidor(String email) async {
+  final identificador = email.toLowerCase().trim();
+  if (identificador.isEmpty) {
+    return;
+  }
+
+  await _firestore.collection('roles_usuarios').doc(identificador).set({
+    'rol': RolUsuario.repartidor.valor,
+    'deshabilitado': true,
+    'debeCambiarContrasena': false,
+    'contrasenaTemporalVisible': '****',
     'actualizado': DateTime.now().toIso8601String(),
   }, SetOptions(merge: true));
 }
