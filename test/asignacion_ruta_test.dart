@@ -6,7 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ruteando_app/main.dart';
 import 'package:ruteando_app/pantalla_asignacion_ruta.dart';
 import 'package:ruteando_app/pantalla_ruta.dart';
-import 'package:ruteando_app/persistencia_rutas.dart';
 
 void main() {
   testWidgets(
@@ -83,7 +82,7 @@ void main() {
     'PantallaRutaAsignada muestra notificacion y permite abrir la ruta',
     (WidgetTester tester) async {
       SharedPreferences.setMockInitialValues({
-        rutaAsignadaKey('local'): jsonEncode({
+        'ruta_asignada_local': jsonEncode({
           'origen': 'Bodega central',
           'paradas': [
             {'texto': 'Cliente 1', 'estado': 'Pendiente'},
@@ -96,7 +95,7 @@ void main() {
           'repartidorEmail': 'local',
           'repartidorNombre': 'Repartidor local',
         }),
-        notificacionRutaKey('local'): jsonEncode({
+        'notificacion_ruta_local': jsonEncode({
           'titulo': 'Nueva ruta asignada',
           'mensaje': 'Tienes una ruta optimizada pendiente.',
           'origen': 'Bodega central',
@@ -124,6 +123,29 @@ void main() {
       expect(find.text('Nueva ruta asignada'), findsNothing);
       expect(find.text('Resumen del viaje'), findsOneWidget);
       expect(find.text('Cliente 1'), findsOneWidget);
+      expect(find.text('Iniciar recorrido'), findsOneWidget);
+
+      await tester.tap(find.text('Iniciar recorrido'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Recorrido en curso'), findsOneWidget);
+      expect(find.text('En camino'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, 'Entregado'), findsOneWidget);
+
+      final entregarButton = find.widgetWithText(FilledButton, 'Entregado');
+      await tester.ensureVisible(entregarButton);
+      await tester.tap(entregarButton);
+      await tester.pumpAndSettle();
+
+      expect(find.text('En camino'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, 'Entregado'), findsOneWidget);
+
+      await tester.ensureVisible(entregarButton);
+      await tester.tap(entregarButton);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Recorrido completado'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, 'Entregado'), findsNothing);
     },
   );
 }
