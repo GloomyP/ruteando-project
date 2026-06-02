@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -111,6 +112,25 @@ Future<Map<String, dynamic>?> cargarRutaAsignada(String email) async {
   }
 
   return null;
+}
+
+Stream<Map<String, dynamic>?> escucharRutaAsignada(String email) {
+  if (Firebase.apps.isEmpty) {
+    return Stream.fromFuture(cargarRutaAsignada(email));
+  }
+
+  return _firestore
+      .collection('rutas_asignadas')
+      .doc(rutaAsignadaKey(email))
+      .snapshots()
+      .asyncMap((doc) async {
+        final data = doc.data();
+        if (data != null) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(_rutaAsignadaLocalKey(email), jsonEncode(data));
+        }
+        return data;
+      });
 }
 
 Future<void> guardarRutaAsignada(

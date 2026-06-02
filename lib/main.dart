@@ -1706,6 +1706,7 @@ class PantallaRutaAsignada extends StatefulWidget {
 class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
   Map<String, dynamic>? _rutaAsignada;
   Map<String, dynamic>? _notificacionRuta;
+  StreamSubscription<Map<String, dynamic>?>? _rutaAsignadaSubscription;
   bool _cargando = true;
 
   String get _driverEmail {
@@ -1720,7 +1721,35 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
   @override
   void initState() {
     super.initState();
+    _escucharRutaAsignada();
     _cargarRuta();
+  }
+
+  @override
+  void dispose() {
+    _rutaAsignadaSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _escucharRutaAsignada() {
+    _rutaAsignadaSubscription?.cancel();
+    final email = _driverEmail;
+    _rutaAsignadaSubscription = escucharRutaAsignada(email).listen(
+      (ruta) async {
+        final notificacion = await cargarNotificacionRuta(email);
+
+        if (!mounted) return;
+        setState(() {
+          _rutaAsignada = ruta;
+          _notificacionRuta = notificacion;
+          _cargando = false;
+        });
+      },
+      onError: (_) {
+        if (!mounted) return;
+        setState(() => _cargando = false);
+      },
+    );
   }
 
   Future<void> _cargarRuta() async {

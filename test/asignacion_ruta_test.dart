@@ -148,4 +148,55 @@ void main() {
       expect(find.widgetWithText(FilledButton, 'Entregado'), findsNothing);
     },
   );
+
+  testWidgets(
+    'PantallaRutaAsignada actualiza distancia y tiempo si cambia la ruta',
+    (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({
+        'ruta_asignada_local': jsonEncode({
+          'origen': 'Bodega central',
+          'paradas': [
+            {'texto': 'Cliente 1', 'estado': 'Pendiente'},
+          ],
+          'distancia': '8.4 km',
+          'tiempo': '18 min',
+          'criterio': 'Menor distancia',
+          'fechaAsignacion': '2026-05-26T12:00:00',
+          'repartidorEmail': 'local',
+          'repartidorNombre': 'Repartidor local',
+        }),
+      });
+
+      await tester.pumpWidget(const MaterialApp(home: PantallaRutaAsignada()));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Distancia: 8.4 km'), findsOneWidget);
+      expect(find.text('Tiempo estimado: 18 min'), findsOneWidget);
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'ruta_asignada_local',
+        jsonEncode({
+          'origen': 'Bodega central',
+          'paradas': [
+            {'texto': 'Cliente 1', 'estado': 'Pendiente'},
+            {'texto': 'Cliente 2', 'estado': 'Pendiente'},
+          ],
+          'distancia': '12.7 km',
+          'tiempo': '26 min',
+          'criterio': 'Tiempo mas rapido',
+          'fechaAsignacion': '2026-05-26T13:00:00',
+          'repartidorEmail': 'local',
+          'repartidorNombre': 'Repartidor local',
+        }),
+      );
+
+      await tester.tap(find.byTooltip('Recargar ruta'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Distancia: 12.7 km'), findsOneWidget);
+      expect(find.text('Tiempo estimado: 26 min'), findsOneWidget);
+      expect(find.text('Cliente 2'), findsOneWidget);
+    },
+  );
 }
