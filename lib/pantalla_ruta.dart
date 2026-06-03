@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -55,6 +56,8 @@ class _PantallaRutaState extends State<PantallaRuta> {
   String _estimacionValor = 'Ingresa origen y paradas';
   String _estado = 'Listo para generar una ruta.';
   bool _cargando = false;
+  String? _tiempoCarga;
+  bool _mostrarExito = false;
   bool _obteniendoUbicacion = false;
   late String _criterioSeleccionado;
 
@@ -204,8 +207,12 @@ class _PantallaRutaState extends State<PantallaRuta> {
       return;
     }
 
+    final cronometro = Stopwatch()..start();
+
     setState(() {
       _cargando = true;
+      _mostrarExito = false;
+      _tiempoCarga = null;
       _estado = 'Consultando Google Directions...';
       _distanciaTotal = 'Calculando...';
       _tiempoTotal = 'Calculando...';
@@ -214,13 +221,32 @@ class _PantallaRutaState extends State<PantallaRuta> {
     });
 
     try {
-      final rutasCandidatas = await _obtenerRutasCandidatas(origen, paradas);
+      final rutasCandidatas = await _obtenerRutasCandidatas(
+        origen,
+        paradas,
+      ).timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          throw TimeoutException(
+            'La carga de la ruta excedio los 5 segundos.',
+          );
+        },
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _estado = 'Optimizando paradas...';
+      });
+
       final rutas = rutasCandidatas.map((candidata) => candidata.ruta).toList();
 
       if (rutas.isEmpty) {
+        cronometro.stop();
         setState(() {
           _estado = 'La respuesta no incluye puntos para dibujar la ruta.';
           _cargando = false;
+          _tiempoCarga = null;
         });
         return;
       }
@@ -246,6 +272,28 @@ class _PantallaRutaState extends State<PantallaRuta> {
       }
       paradasOrdenadas.add(rutaCandidata.destino.texto);
 
+      if (!mounted) return;
+
+      setState(() {
+        _estado = 'Dibujando ruta en el mapa...';
+      });
+
+      // Validar que los datos de la ruta son correctos antes de asignarlos.
+      final puntosValidos = rutaSeleccionada.puntos.isNotEmpty;
+      if (!puntosValidos) {
+        cronometro.stop();
+        setState(() {
+          _estado = 'Los datos de la ruta estan incompletos.';
+          _cargando = false;
+          _tiempoCarga = null;
+        });
+        return;
+      }
+
+      cronometro.stop();
+      final segundosCarga =
+          (cronometro.elapsedMilliseconds / 1000).toStringAsFixed(1);
+
       setState(() {
         _ultimoOrigen = origen;
         _ultimasParadasOrdenadas = paradasOrdenadas;
@@ -260,10 +308,12 @@ class _PantallaRutaState extends State<PantallaRuta> {
             '${(rutaSeleccionada.duracionSegundos / 60).round()} min';
         _estimacionTitulo = estimacion['titulo']!;
         _estimacionValor = estimacion['valor']!;
+        _tiempoCarga = '${segundosCarga}s';
         _estado = rutaCandidata.paradasIntermedias.isEmpty
-            ? 'Ruta generada con 1 parada.'
-            : 'Ruta generada con ${paradas.length} paradas optimizadas.';
+            ? 'Ruta generada con 1 parada en ${segundosCarga}s.'
+            : 'Ruta generada con ${paradas.length} paradas en ${segundosCarga}s.';
         _cargando = false;
+        _mostrarExito = true;
         _polylines = {
           Polyline(
             polylineId: PolylineId(
@@ -301,11 +351,34 @@ class _PantallaRutaState extends State<PantallaRuta> {
         };
       });
 
-      await _ajustarCamara(rutaSeleccionada.puntos);
+      // Ocultar el indicador de exito despues de 3 segundos.
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) {
+          setState(() {
+            _mostrarExito = false;
+          });
+        }
+      });
+
+      if (mounted) {
+        await _ajustarCamara(rutaSeleccionada.puntos);
+      }
+    } on TimeoutException {
+      cronometro.stop();
+      if (!mounted) return;
+      setState(() {
+        _estado =
+            'La carga excedio 5 segundos. Intenta con menos paradas o verifica tu conexion.';
+        _cargando = false;
+        _tiempoCarga = null;
+      });
     } catch (e) {
+      cronometro.stop();
+      if (!mounted) return;
       setState(() {
         _estado = 'Error consultando la ruta: $e';
         _cargando = false;
+        _tiempoCarga = null;
       });
     }
   }
@@ -330,30 +403,35 @@ class _PantallaRutaState extends State<PantallaRuta> {
           .toList();
     }
 
-    final candidatas = <_RutaCandidata>[];
+    // Ejecutar todas las consultas en paralelo para mejor rendimiento.
+    final futures = <Future<List<_RutaCandidata>>>[];
     for (var index = 0; index < paradas.length; index++) {
       final destino = paradas[index];
       final paradasIntermedias = [
         ...paradas.take(index),
         ...paradas.skip(index + 1),
       ];
-      final rutas = await obtenerRutasGoogle(
-        origen: origen,
-        destino: destino.texto,
-        paradas: paradasIntermedias.map((parada) => parada.texto).toList(),
-      );
-      candidatas.addAll(
-        rutas.map(
-          (ruta) => (
-            ruta: ruta,
-            destino: destino,
-            paradasIntermedias: paradasIntermedias,
-          ),
+      futures.add(
+        obtenerRutasGoogle(
+          origen: origen,
+          destino: destino.texto,
+          paradas: paradasIntermedias.map((parada) => parada.texto).toList(),
+        ).then(
+          (rutas) => rutas
+              .map(
+                (ruta) => (
+                  ruta: ruta,
+                  destino: destino,
+                  paradasIntermedias: paradasIntermedias,
+                ),
+              )
+              .toList(),
         ),
       );
     }
 
-    return candidatas;
+    final resultados = await Future.wait(futures);
+    return resultados.expand((lista) => lista).toList();
   }
 
   Set<Marker> _crearMarkersParadas(
@@ -673,6 +751,95 @@ class _PantallaRutaState extends State<PantallaRuta> {
             markers: _markers,
             polylines: _polylines,
           ),
+          // Overlay de carga sobre el mapa.
+          if (_cargando)
+            Positioned.fill(
+              child: ColoredBox(
+                color: Colors.black54,
+                child: Center(
+                  child: Card(
+                    elevation: 12,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 32,
+                        vertical: 24,
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 48,
+                            height: 48,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 4,
+                              color: Colors.green[700],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            _estado,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Tiempo limite: 5 segundos',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          // Indicador de exito tras la carga.
+          if (_mostrarExito)
+            Positioned(
+              top: 16,
+              right: 12,
+              child: Card(
+                color: Colors.green[700],
+                elevation: 6,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.check_circle,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Ruta cargada en $_tiempoCarga',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           Positioned(
             top: 16,
             left: 12,
