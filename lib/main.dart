@@ -16,6 +16,9 @@ import 'pantalla_monitoreo_entregas.dart';
 import 'pantalla_perfil.dart';
 import 'perfil_usuario.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:ui' as ui;
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'directions_service.dart' if (dart.library.js) 'directions_service_web.dart';
 
 String _empresaUsuarioKey() => empresaUsuarioKey();
 
@@ -1709,6 +1712,14 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
   StreamSubscription<Map<String, dynamic>?>? _rutaAsignadaSubscription;
   bool _cargando = true;
 
+  // Nuevas variables para el Mapa Interactivo
+  Set<Marker> _markers = {};
+  Set<Polyline> _polylines = {};
+  GoogleMapController? _mapController;
+  bool _cargandoMapa = false;
+  List<LatLng> _puntosParadasMapa = [];
+  LatLng? _puntoDestinoMapa;
+
   String get _driverEmail {
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -1731,6 +1742,44 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
     super.dispose();
   }
 
+  // Generador de Marcadores Numerados
+// Generador de Marcadores Numerados (Tamaño ajustado)
+  Future<BitmapDescriptor> _crearMarcadorNumerado(int numero, Color color) async {
+    final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
+    final Canvas canvas = Canvas(pictureRecorder);
+    
+    // Reducimos el tamaño general del lienzo de 110 a 60
+    const double size = 60;
+
+    final Paint paint = Paint()..color = color;
+    final Paint strokePaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4.0; // Borde más delgado proporcional al nuevo tamaño
+
+    canvas.drawCircle(const Offset(size / 2, size / 2), size / 2.2, paint);
+    canvas.drawCircle(const Offset(size / 2, size / 2), size / 2.2, strokePaint);
+
+    final TextPainter painter = TextPainter(textDirection: TextDirection.ltr);
+    painter.text = TextSpan(
+      text: numero.toString(),
+      style: const TextStyle(
+        fontSize: 26, // Reducimos el tamaño de la fuente de 45 a 26
+        color: Colors.white,
+        fontWeight: FontWeight.bold,
+      ),
+    );
+    painter.layout();
+    painter.paint(
+      canvas,
+      Offset((size - painter.width) / 2, (size - painter.height) / 2),
+    );
+
+    final img = await pictureRecorder.endRecording().toImage(size.toInt(), size.toInt());
+    final data = await img.toByteData(format: ui.ImageByteFormat.png);
+    return BitmapDescriptor.fromBytes(data!.buffer.asUint8List());
+  }
+
   void _escucharRutaAsignada() {
     _rutaAsignadaSubscription?.cancel();
     final email = _driverEmail;
@@ -1744,6 +1793,11 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
           _notificacionRuta = notificacion;
           _cargando = false;
         });
+        
+        // Regenerar marcadores visuales si cambian los datos de fondo
+        if (ruta != null && _polylines.isNotEmpty) {
+          await _actualizarMarcadores(ruta['paradas']);
+        }
       },
       onError: (_) {
         if (!mounted) return;
@@ -1753,7 +1807,10 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
   }
 
   Future<void> _cargarRuta() async {
-    setState(() => _cargando = true);
+    setState(() {
+      _cargando = true;
+      _cargandoMapa = true;
+    });
     final email = _driverEmail;
     final ruta = await cargarRutaAsignada(email);
     final notificacion = await cargarNotificacionRuta(email);
@@ -1764,6 +1821,129 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
       _notificacionRuta = notificacion;
       _cargando = false;
     });
+
+    if (ruta != null) {
+      await _generarMapaConductor(ruta);
+    } else {
+      setState(() => _cargandoMapa = false);
+    }
+  }
+
+  Future<void> _generarMapaConductor(Map<String, dynamic> ruta) async {
+    final origen = ruta['origen']?.toString() ?? '';
+    final paradasRaw = ruta['paradas'] as List? ?? [];
+
+    if (origen.isEmpty || paradasRaw.isEmpty) {
+      setState(() => _cargandoMapa = false);
+      return;
+    }
+
+    final paradas = paradasRaw.map((p) => (p as Map)['texto'].toString()).toList();
+    final destino = paradas.last;
+    final paradasIntermedias = paradas.length > 1 ? paradas.sublist(0, paradas.length - 1) : <String>[];
+
+    try {
+      final rutas = await obtenerRutasGoogle(
+        origen: origen,
+        destino: destino,
+        paradas: paradasIntermedias,
+      );
+
+      if (rutas.isNotEmpty) {
+        final rutaOptima = rutas.first;
+        _puntosParadasMapa = rutaOptima.puntosParadas;
+        _puntoDestinoMapa = rutaOptima.puntos.last;
+
+        final polyline = Polyline(
+          polylineId: const PolylineId('ruta_conductor'),
+          points: rutaOptima.puntos,
+          color: Colors.blueAccent,
+          width: 6,
+        );
+
+        if (!mounted) return;
+        setState(() {
+          _polylines = {polyline};
+        });
+
+        await _actualizarMarcadores(paradasRaw);
+        
+        if (!mounted) return;
+        setState(() => _cargandoMapa = false);
+        _ajustarCamara(rutaOptima.puntos);
+      }
+    } catch (e) {
+      debugPrint('Error cargando mapa: $e');
+      if (mounted) setState(() => _cargandoMapa = false);
+    }
+  }
+
+  Future<void> _actualizarMarcadores(List<dynamic> paradasRaw) async {
+    final nuevosMarkers = <Marker>{};
+
+    if (_polylines.isNotEmpty) {
+      nuevosMarkers.add(
+        Marker(
+          markerId: const MarkerId('origen'),
+          position: _polylines.first.points.first,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+          infoWindow: const InfoWindow(title: 'Origen'),
+        ),
+      );
+    }
+
+    for (int i = 0; i < paradasRaw.length; i++) {
+      final position = i < _puntosParadasMapa.length
+          ? _puntosParadasMapa[i]
+          : (_puntoDestinoMapa ?? const LatLng(0, 0));
+
+      final estado = paradasRaw[i]['estado']?.toString() ?? 'Pendiente';
+      
+      // Diferenciación visual de las paradas según su estado
+      Color colorMarcador = Colors.grey;
+      if (estado == 'En camino') colorMarcador = Colors.orange;
+      if (estado == 'Entregado') colorMarcador = Colors.green;
+
+      final icon = await _crearMarcadorNumerado(i + 1, colorMarcador);
+
+      nuevosMarkers.add(
+        Marker(
+          markerId: MarkerId('parada_$i'),
+          position: position,
+          icon: icon,
+          infoWindow: InfoWindow(title: 'Parada ${i + 1}', snippet: paradasRaw[i]['texto']),
+        ),
+      );
+    }
+
+    if (mounted) {
+      setState(() {
+        _markers = nuevosMarkers;
+      });
+    }
+  }
+
+  void _ajustarCamara(List<LatLng> puntos) {
+    if (_mapController == null || puntos.isEmpty) return;
+
+    double minLat = puntos.first.latitude;
+    double maxLat = puntos.first.latitude;
+    double minLng = puntos.first.longitude;
+    double maxLng = puntos.first.longitude;
+
+    for (final p in puntos) {
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
+
+    _mapController!.animateCamera(
+      CameraUpdate.newLatLngBounds(
+        LatLngBounds(southwest: LatLng(minLat, minLng), northeast: LatLng(maxLat, maxLng)),
+        50,
+      ),
+    );
   }
 
   Future<void> _abrirRutaDesdeNotificacion() async {
@@ -1781,13 +1961,10 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
 
   Future<void> _guardarRutaActualizada(Map<String, dynamic> ruta) async {
     final email = _driverEmail;
-
     await guardarRutaAsignada(email, ruta);
 
     final globalAssignments = await cargarAsignacionesGlobales();
-    final idx = globalAssignments.indexWhere(
-      (a) => a['repartidorEmail'] == email,
-    );
+    final idx = globalAssignments.indexWhere((a) => a['repartidorEmail'] == email);
     if (idx != -1) {
       globalAssignments[idx] = ruta;
     } else {
@@ -1800,9 +1977,7 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
     if (_rutaAsignada == null) return;
 
     final paradas = List<Map<String, dynamic>>.from(
-      (_rutaAsignada!['paradas'] as List).map(
-        (p) => Map<String, dynamic>.from(p as Map),
-      ),
+      (_rutaAsignada!['paradas'] as List).map((p) => Map<String, dynamic>.from(p as Map)),
     );
 
     if (paradas.isEmpty) return;
@@ -1812,9 +1987,7 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
         parada['estado'] = 'Pendiente';
       }
     }
-    final primeraPendiente = paradas.indexWhere(
-      (parada) => parada['estado'] != 'Entregado',
-    );
+    final primeraPendiente = paradas.indexWhere((parada) => parada['estado'] != 'Entregado');
     if (primeraPendiente == -1) {
       _rutaAsignada!['estadoRecorrido'] = 'Completado';
     } else {
@@ -1824,6 +1997,7 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
 
     _rutaAsignada!['paradas'] = paradas;
     await _guardarRutaActualizada(_rutaAsignada!);
+    await _actualizarMarcadores(paradas); // Actualiza los colores en el mapa al instante
 
     if (!mounted) return;
     setState(() {});
@@ -1833,18 +2007,14 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
     if (_rutaAsignada == null) return;
 
     final paradas = List<Map<String, dynamic>>.from(
-      (_rutaAsignada!['paradas'] as List).map(
-        (p) => Map<String, dynamic>.from(p as Map),
-      ),
+      (_rutaAsignada!['paradas'] as List).map((p) => Map<String, dynamic>.from(p as Map)),
     );
 
     if (index < 0 || index >= paradas.length) return;
 
     paradas[index]['estado'] = 'Entregado';
 
-    final siguiente = paradas.indexWhere(
-      (parada) => parada['estado'] == 'Pendiente',
-    );
+    final siguiente = paradas.indexWhere((parada) => parada['estado'] == 'Pendiente');
     if (siguiente == -1) {
       _rutaAsignada!['estadoRecorrido'] = 'Completado';
     } else {
@@ -1854,6 +2024,7 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
 
     _rutaAsignada!['paradas'] = paradas;
     await _guardarRutaActualizada(_rutaAsignada!);
+    await _actualizarMarcadores(paradas); // Actualiza los colores en el mapa al instante
 
     if (!mounted) return;
     setState(() {});
@@ -2048,7 +2219,29 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Icon(Icons.alt_route, size: 72, color: Colors.green),
+        Card(
+          elevation: 4,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: SizedBox(
+            height: 350,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: _cargandoMapa
+                  ? const Center(child: CircularProgressIndicator())
+                  : GoogleMap(
+                      onMapCreated: (controller) => _mapController = controller,
+                      initialCameraPosition: const CameraPosition(
+                        target: LatLng(-33.0458, -71.6197),
+                        zoom: 13,
+                      ),
+                      markers: _markers,
+                      polylines: _polylines,
+                      myLocationEnabled: true, 
+                      myLocationButtonEnabled: true,
+                    ),
+            ),
+          ),
+        ),
         const SizedBox(height: 16),
         Text(
           user?.email ?? 'Repartidor',
