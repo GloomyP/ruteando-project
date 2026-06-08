@@ -47,8 +47,25 @@ void main() {
 
       final OutlinedButton button = tester.widget(outlinedButtonFinder);
       expect(button.onPressed, isNull);
+      expect(find.text('Paradas por optimizar'), findsOneWidget);
+      expect(
+        find.text('Terminal Rodoviario Valparaiso, Chile'),
+        findsOneWidget,
+      );
     },
   );
+
+  testWidgets('PantallaRuta oculta vista previa de paradas para repartidor', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'rol_usuario_local': 'repartidor'});
+
+    await tester.pumpWidget(const MaterialApp(home: PantallaRuta()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Paradas por optimizar'), findsNothing);
+    expect(find.text('Terminal Rodoviario Valparaiso, Chile'), findsNothing);
+  });
 
   testWidgets(
     'PantallaAsignacionRuta muestra estado vacio si no hay asignaciones',

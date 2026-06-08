@@ -18,7 +18,8 @@ import 'perfil_usuario.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:ui' as ui;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'directions_service.dart' if (dart.library.js) 'directions_service_web.dart';
+import 'directions_service.dart'
+    if (dart.library.js) 'directions_service_web.dart';
 
 String _empresaUsuarioKey() => empresaUsuarioKey();
 
@@ -1743,11 +1744,14 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
   }
 
   // Generador de Marcadores Numerados
-// Generador de Marcadores Numerados (Tamaño ajustado)
-  Future<BitmapDescriptor> _crearMarcadorNumerado(int numero, Color color) async {
+  // Generador de Marcadores Numerados (Tamaño ajustado)
+  Future<BitmapDescriptor> _crearMarcadorNumerado(
+    int numero,
+    Color color,
+  ) async {
     final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
     final Canvas canvas = Canvas(pictureRecorder);
-    
+
     // Reducimos el tamaño general del lienzo de 110 a 60
     const double size = 60;
 
@@ -1758,7 +1762,11 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
       ..strokeWidth = 4.0; // Borde más delgado proporcional al nuevo tamaño
 
     canvas.drawCircle(const Offset(size / 2, size / 2), size / 2.2, paint);
-    canvas.drawCircle(const Offset(size / 2, size / 2), size / 2.2, strokePaint);
+    canvas.drawCircle(
+      const Offset(size / 2, size / 2),
+      size / 2.2,
+      strokePaint,
+    );
 
     final TextPainter painter = TextPainter(textDirection: TextDirection.ltr);
     painter.text = TextSpan(
@@ -1775,7 +1783,10 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
       Offset((size - painter.width) / 2, (size - painter.height) / 2),
     );
 
-    final img = await pictureRecorder.endRecording().toImage(size.toInt(), size.toInt());
+    final img = await pictureRecorder.endRecording().toImage(
+      size.toInt(),
+      size.toInt(),
+    );
     final data = await img.toByteData(format: ui.ImageByteFormat.png);
     return BitmapDescriptor.fromBytes(data!.buffer.asUint8List());
   }
@@ -1793,7 +1804,7 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
           _notificacionRuta = notificacion;
           _cargando = false;
         });
-        
+
         // Regenerar marcadores visuales si cambian los datos de fondo
         if (ruta != null && _polylines.isNotEmpty) {
           await _actualizarMarcadores(ruta['paradas']);
@@ -1838,9 +1849,13 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
       return;
     }
 
-    final paradas = paradasRaw.map((p) => (p as Map)['texto'].toString()).toList();
+    final paradas = paradasRaw
+        .map((p) => (p as Map)['texto'].toString())
+        .toList();
     final destino = paradas.last;
-    final paradasIntermedias = paradas.length > 1 ? paradas.sublist(0, paradas.length - 1) : <String>[];
+    final paradasIntermedias = paradas.length > 1
+        ? paradas.sublist(0, paradas.length - 1)
+        : <String>[];
 
     try {
       final rutas = await obtenerRutasGoogle(
@@ -1867,7 +1882,7 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
         });
 
         await _actualizarMarcadores(paradasRaw);
-        
+
         if (!mounted) return;
         setState(() => _cargandoMapa = false);
         _ajustarCamara(rutaOptima.puntos);
@@ -1880,13 +1895,19 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
 
   Future<void> _actualizarMarcadores(List<dynamic> paradasRaw) async {
     final nuevosMarkers = <Marker>{};
+    final recorridoIniciado = paradasRaw.any((paradaRaw) {
+      final estado = (paradaRaw as Map)['estado']?.toString() ?? 'Pendiente';
+      return estado == 'En camino' || estado == 'Entregado';
+    });
 
     if (_polylines.isNotEmpty) {
       nuevosMarkers.add(
         Marker(
           markerId: const MarkerId('origen'),
           position: _polylines.first.points.first,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueGreen,
+          ),
           infoWindow: const InfoWindow(title: 'Origen'),
         ),
       );
@@ -1898,11 +1919,17 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
           : (_puntoDestinoMapa ?? const LatLng(0, 0));
 
       final estado = paradasRaw[i]['estado']?.toString() ?? 'Pendiente';
-      
-      // Diferenciación visual de las paradas según su estado
-      Color colorMarcador = Colors.grey;
-      if (estado == 'En camino') colorMarcador = Colors.orange;
-      if (estado == 'Entregado') colorMarcador = Colors.green;
+
+      Color colorMarcador;
+      if (estado == 'Entregado') {
+        colorMarcador = Colors.green;
+      } else if (estado == 'En camino') {
+        colorMarcador = Colors.orange;
+      } else if (recorridoIniciado) {
+        colorMarcador = const Color.fromARGB(255, 243, 33, 33);
+      } else {
+        colorMarcador = Colors.grey;
+      }
 
       final icon = await _crearMarcadorNumerado(i + 1, colorMarcador);
 
@@ -1911,7 +1938,10 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
           markerId: MarkerId('parada_$i'),
           position: position,
           icon: icon,
-          infoWindow: InfoWindow(title: 'Parada ${i + 1}', snippet: paradasRaw[i]['texto']),
+          infoWindow: InfoWindow(
+            title: 'Parada ${i + 1}',
+            snippet: paradasRaw[i]['texto'],
+          ),
         ),
       );
     }
@@ -1940,7 +1970,10 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
 
     _mapController!.animateCamera(
       CameraUpdate.newLatLngBounds(
-        LatLngBounds(southwest: LatLng(minLat, minLng), northeast: LatLng(maxLat, maxLng)),
+        LatLngBounds(
+          southwest: LatLng(minLat, minLng),
+          northeast: LatLng(maxLat, maxLng),
+        ),
         50,
       ),
     );
@@ -1964,7 +1997,9 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
     await guardarRutaAsignada(email, ruta);
 
     final globalAssignments = await cargarAsignacionesGlobales();
-    final idx = globalAssignments.indexWhere((a) => a['repartidorEmail'] == email);
+    final idx = globalAssignments.indexWhere(
+      (a) => a['repartidorEmail'] == email,
+    );
     if (idx != -1) {
       globalAssignments[idx] = ruta;
     } else {
@@ -1977,7 +2012,9 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
     if (_rutaAsignada == null) return;
 
     final paradas = List<Map<String, dynamic>>.from(
-      (_rutaAsignada!['paradas'] as List).map((p) => Map<String, dynamic>.from(p as Map)),
+      (_rutaAsignada!['paradas'] as List).map(
+        (p) => Map<String, dynamic>.from(p as Map),
+      ),
     );
 
     if (paradas.isEmpty) return;
@@ -1987,7 +2024,9 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
         parada['estado'] = 'Pendiente';
       }
     }
-    final primeraPendiente = paradas.indexWhere((parada) => parada['estado'] != 'Entregado');
+    final primeraPendiente = paradas.indexWhere(
+      (parada) => parada['estado'] != 'Entregado',
+    );
     if (primeraPendiente == -1) {
       _rutaAsignada!['estadoRecorrido'] = 'Completado';
     } else {
@@ -1997,7 +2036,9 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
 
     _rutaAsignada!['paradas'] = paradas;
     await _guardarRutaActualizada(_rutaAsignada!);
-    await _actualizarMarcadores(paradas); // Actualiza los colores en el mapa al instante
+    await _actualizarMarcadores(
+      paradas,
+    ); // Actualiza los colores en el mapa al instante
 
     if (!mounted) return;
     setState(() {});
@@ -2007,14 +2048,18 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
     if (_rutaAsignada == null) return;
 
     final paradas = List<Map<String, dynamic>>.from(
-      (_rutaAsignada!['paradas'] as List).map((p) => Map<String, dynamic>.from(p as Map)),
+      (_rutaAsignada!['paradas'] as List).map(
+        (p) => Map<String, dynamic>.from(p as Map),
+      ),
     );
 
     if (index < 0 || index >= paradas.length) return;
 
     paradas[index]['estado'] = 'Entregado';
 
-    final siguiente = paradas.indexWhere((parada) => parada['estado'] == 'Pendiente');
+    final siguiente = paradas.indexWhere(
+      (parada) => parada['estado'] == 'Pendiente',
+    );
     if (siguiente == -1) {
       _rutaAsignada!['estadoRecorrido'] = 'Completado';
     } else {
@@ -2024,7 +2069,9 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
 
     _rutaAsignada!['paradas'] = paradas;
     await _guardarRutaActualizada(_rutaAsignada!);
-    await _actualizarMarcadores(paradas); // Actualiza los colores en el mapa al instante
+    await _actualizarMarcadores(
+      paradas,
+    ); // Actualiza los colores en el mapa al instante
 
     if (!mounted) return;
     setState(() {});
@@ -2032,11 +2079,6 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
 
   @override
   Widget build(BuildContext context) {
-    User? user;
-    try {
-      user = FirebaseAuth.instance.currentUser;
-    } catch (_) {}
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Mi ruta asignada'),
@@ -2045,31 +2087,112 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
         actions: _accionesPerfil(context),
       ),
       drawer: _buildMenuDrawer(context, currentRoute: '/mi-ruta'),
-      body: SafeArea(
-        child: Center(
-          child: _cargando
-              ? const CircularProgressIndicator()
-              : SingleChildScrollView(
+      body: _cargando
+          ? const Center(child: CircularProgressIndicator())
+          : _rutaAsignada == null
+          ? SafeArea(
+              child: Center(
+                child: SingleChildScrollView(
                   padding: const EdgeInsets.all(24),
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 520),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (_notificacionRuta != null &&
-                            _notificacionRuta!['leida'] != true) ...[
-                          _buildNotificacionRuta(),
-                          const SizedBox(height: 16),
-                        ],
-                        _rutaAsignada == null
-                            ? _buildEmptyState()
-                            : _buildDetalleRuta(user),
-                      ],
-                    ),
+                    child: _buildEmptyState(),
                   ),
                 ),
+              ),
+            )
+          : _buildRutaConMapaCompleto(),
+    );
+  }
+
+  Widget _buildRutaConMapaCompleto() {
+    final mostrarNotificacion =
+        _notificacionRuta != null && _notificacionRuta!['leida'] != true;
+
+    return Stack(
+      children: [
+        Positioned.fill(child: _buildMapaConductor()),
+        if (_cargandoMapa)
+          const Positioned.fill(
+            child: ColoredBox(
+              color: Color(0x33000000),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          ),
+        Positioned(
+          top: 12,
+          right: 12,
+          child: SafeArea(
+            bottom: false,
+            child: FloatingActionButton.small(
+              heroTag: 'recargar_ruta_conductor',
+              tooltip: 'Recargar ruta',
+              onPressed: _cargarRuta,
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.green[800],
+              child: const Icon(Icons.refresh),
+            ),
+          ),
         ),
+        Positioned(
+          left: 12,
+          bottom: 12,
+          child: SafeArea(
+            top: false,
+            child: Listener(
+              behavior: HitTestBehavior.opaque,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: 320,
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.82,
+                ),
+                child: Material(
+                  elevation: 10,
+                  borderRadius: BorderRadius.circular(16),
+                  color: Colors.white,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: _buildDetalleRuta(),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        if (mostrarNotificacion)
+          Positioned(
+            top: 12,
+            left: 12,
+            right: 12,
+            child: SafeArea(
+              bottom: false,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  child: _buildNotificacionRuta(),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildMapaConductor() {
+    if (_cargandoMapa) {
+      return const ColoredBox(color: Color(0xFFE8F5E9));
+    }
+
+    return GoogleMap(
+      onMapCreated: (controller) => _mapController = controller,
+      initialCameraPosition: const CameraPosition(
+        target: LatLng(-33.0458, -71.6197),
+        zoom: 13,
       ),
+      markers: _markers,
+      polylines: _polylines,
+      myLocationEnabled: true,
+      myLocationButtonEnabled: true,
     );
   }
 
@@ -2196,7 +2319,7 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
     );
   }
 
-  Widget _buildDetalleRuta(User? user) {
+  Widget _buildDetalleRuta() {
     final origen = _rutaAsignada!['origen']?.toString() ?? 'No especificado';
     final paradas = _rutaAsignada!['paradas'] as List? ?? [];
     final distancia = _rutaAsignada!['distancia']?.toString() ?? 'N/A';
@@ -2219,36 +2342,6 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Card(
-          elevation: 4,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          child: SizedBox(
-            height: 350,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: _cargandoMapa
-                  ? const Center(child: CircularProgressIndicator())
-                  : GoogleMap(
-                      onMapCreated: (controller) => _mapController = controller,
-                      initialCameraPosition: const CameraPosition(
-                        target: LatLng(-33.0458, -71.6197),
-                        zoom: 13,
-                      ),
-                      markers: _markers,
-                      polylines: _polylines,
-                      myLocationEnabled: true, 
-                      myLocationButtonEnabled: true,
-                    ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Text(
-          user?.email ?? 'Repartidor',
-          textAlign: TextAlign.center,
-          style: const TextStyle(color: Colors.black54),
-        ),
-        const SizedBox(height: 24),
         Card(
           elevation: 3,
           shape: RoundedRectangleBorder(
@@ -2306,13 +2399,18 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
-                      'Progreso de entregas',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
+                    const Expanded(
+                      child: Text(
+                        'Progreso de entregas',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
+                    const SizedBox(width: 8),
                     Text(
                       '$entregados / $total completadas',
                       style: const TextStyle(
@@ -2391,72 +2489,87 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
-              'Paradas en ruta',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+            const Expanded(
+              child: Text(
+                'Paradas en ruta',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+              ),
             ),
             IconButton(
-              tooltip: 'Recargar ruta',
+              tooltip: 'Actualizar lista',
               onPressed: _cargarRuta,
               icon: const Icon(Icons.refresh),
             ),
           ],
         ),
         const SizedBox(height: 12),
-        ...List.generate(total, (index) {
-          final parada = paradas[index] as Map;
-          final texto = parada['texto']?.toString() ?? '';
-          final estado = parada['estado']?.toString() ?? 'Pendiente';
-          final esParadaActual = recorridoIniciado && estado == 'En camino';
+        Expanded(
+          child: SingleChildScrollView(
+            primary: false,
+            physics: const ClampingScrollPhysics(),
+            child: Column(
+              children: List.generate(total, (index) {
+                final parada = paradas[index] as Map;
+                final texto = parada['texto']?.toString() ?? '';
+                final estado = parada['estado']?.toString() ?? 'Pendiente';
+                final esParadaActual =
+                    recorridoIniciado && estado == 'En camino';
 
-          Color estadoColor = Colors.grey;
-          if (estado == 'En camino') estadoColor = Colors.blue;
-          if (estado == 'Entregado') estadoColor = Colors.green;
+                Color estadoColor = Colors.grey;
+                if (estado == 'En camino') estadoColor = Colors.blue;
+                if (estado == 'Entregado') estadoColor = Colors.green;
 
-          return Card(
-            margin: const EdgeInsets.only(bottom: 12),
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: estadoColor.withValues(alpha: 0.1),
-                foregroundColor: estadoColor,
-                child: Text('${index + 1}'),
-              ),
-              title: Text(
-                texto,
-                style: const TextStyle(fontWeight: FontWeight.w500),
-              ),
-              subtitle: Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Chip(
-                      label: Text(estado),
-                      visualDensity: VisualDensity.compact,
-                      backgroundColor: estadoColor.withValues(alpha: 0.12),
-                      labelStyle: TextStyle(
-                        color: estadoColor,
-                        fontWeight: FontWeight.w600,
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: estadoColor.withValues(alpha: 0.1),
+                      foregroundColor: estadoColor,
+                      child: Text('${index + 1}'),
+                    ),
+                    title: Text(
+                      texto,
+                      style: const TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    subtitle: Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Chip(
+                            label: Text(estado),
+                            visualDensity: VisualDensity.compact,
+                            backgroundColor: estadoColor.withValues(
+                              alpha: 0.12,
+                            ),
+                            labelStyle: TextStyle(
+                              color: estadoColor,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          if (esParadaActual)
+                            FilledButton.icon(
+                              onPressed: () => _marcarEntregado(index),
+                              icon: const Icon(Icons.check),
+                              label: const Text('Entregado'),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: Colors.green[700],
+                                visualDensity: VisualDensity.compact,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
-                    if (esParadaActual)
-                      FilledButton.icon(
-                        onPressed: () => _marcarEntregado(index),
-                        icon: const Icon(Icons.check),
-                        label: const Text('Entregado'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Colors.green[700],
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
+                  ),
+                );
+              }),
             ),
-          );
-        }),
+          ),
+        ),
       ],
     );
   }
