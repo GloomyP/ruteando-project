@@ -60,6 +60,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
   bool _mostrarExito = false;
   bool _obteniendoUbicacion = false;
   late String _criterioSeleccionado;
+  late final Future<RolUsuario> _rolFuture;
 
   Set<Polyline> _polylines = {};
   Set<Marker> _markers = {};
@@ -124,18 +125,38 @@ class _PantallaRutaState extends State<PantallaRuta> {
   @override
   void initState() {
     super.initState();
+    _rolFuture = cargarRolUsuario();
     _criterioSeleccionado = _criteriosOptimizacion.contains(widget.criterio)
         ? widget.criterio!
         : _criteriosOptimizacion.first;
+    _origenController.addListener(_onCampoRutaCambiado);
+    for (final controller in _paradaControllers) {
+      controller.addListener(_onCampoRutaCambiado);
+    }
   }
 
   @override
   void dispose() {
+    _origenController.removeListener(_onCampoRutaCambiado);
     _origenController.dispose();
     for (final controller in _paradaControllers) {
+      controller.removeListener(_onCampoRutaCambiado);
       controller.dispose();
     }
     super.dispose();
+  }
+
+  void _onCampoRutaCambiado() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  List<String> get _paradasIngresadas {
+    return _paradaControllers
+        .map((controller) => controller.text.trim())
+        .where((parada) => parada.isNotEmpty)
+        .toList();
   }
 
   String get _criterioNormalizado => _criterioSeleccionado.toLowerCase();
@@ -221,17 +242,15 @@ class _PantallaRutaState extends State<PantallaRuta> {
     });
 
     try {
-      final rutasCandidatas = await _obtenerRutasCandidatas(
-        origen,
-        paradas,
-      ).timeout(
-        const Duration(seconds: 5),
-        onTimeout: () {
-          throw TimeoutException(
-            'La carga de la ruta excedio los 5 segundos.',
+      final rutasCandidatas = await _obtenerRutasCandidatas(origen, paradas)
+          .timeout(
+            const Duration(seconds: 5),
+            onTimeout: () {
+              throw TimeoutException(
+                'La carga de la ruta excedio los 5 segundos.',
+              );
+            },
           );
-        },
-      );
 
       if (!mounted) return;
 
@@ -291,8 +310,8 @@ class _PantallaRutaState extends State<PantallaRuta> {
       }
 
       cronometro.stop();
-      final segundosCarga =
-          (cronometro.elapsedMilliseconds / 1000).toStringAsFixed(1);
+      final segundosCarga = (cronometro.elapsedMilliseconds / 1000)
+          .toStringAsFixed(1);
 
       setState(() {
         _ultimoOrigen = origen;
@@ -472,7 +491,9 @@ class _PantallaRutaState extends State<PantallaRuta> {
 
   void _agregarParada() {
     setState(() {
-      _paradaControllers.add(TextEditingController());
+      final controller = TextEditingController()
+        ..addListener(_onCampoRutaCambiado);
+      _paradaControllers.add(controller);
       _paradaIds.add(_nextParadaId++);
       _estado = 'Nueva parada agregada.';
     });
@@ -489,6 +510,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
     final teniaRutaCalculada = _polylines.isNotEmpty;
     final paradaId = _paradaIds.removeAt(index);
     final controller = _paradaControllers.removeAt(index);
+    controller.removeListener(_onCampoRutaCambiado);
     controller.dispose();
     setState(() {
       _markers = _markers
@@ -640,7 +662,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
       drawer: Drawer(
         child: SafeArea(
           child: FutureBuilder<RolUsuario>(
-            future: cargarRolUsuario(),
+            future: _rolFuture,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
@@ -972,6 +994,26 @@ class _PantallaRutaState extends State<PantallaRuta> {
                                 ),
                               ],
                             ),
+                          ),
+                          const SizedBox(height: 8),
+                          FutureBuilder<RolUsuario>(
+                            future: _rolFuture,
+                            builder: (context, snapshot) {
+                              final esAdmin =
+                                  snapshot.connectionState !=
+                                      ConnectionState.waiting &&
+                                  puedeAdministrar(
+                                    snapshot.data ?? RolUsuario.repartidor,
+                                  );
+
+                              if (!esAdmin) {
+                                return const SizedBox.shrink();
+                              }
+
+                              return _VistaPreviaParadas(
+                                paradas: _paradasIngresadas,
+                              );
+                            },
                           ),
                           const SizedBox(height: 8),
                           Align(
@@ -1345,6 +1387,90 @@ class _PantallaRutaState extends State<PantallaRuta> {
         ),
       );
     }
+  }
+}
+
+class _VistaPreviaParadas extends StatelessWidget {
+  const _VistaPreviaParadas({required this.paradas});
+
+  final List<String> paradas;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorBorde = Colors.green.shade100;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.green.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colorBorde),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.fact_check_outlined,
+                  size: 16,
+                  color: Colors.green[800],
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Paradas por optimizar',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.green[900],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            if (paradas.isEmpty)
+              Text(
+                'Ingresa al menos una parada.',
+                style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+              )
+            else
+              ...paradas.asMap().entries.map((entry) {
+                return Padding(
+                  padding: EdgeInsets.only(top: entry.key == 0 ? 0 : 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: 22,
+                        child: Text(
+                          '${entry.key + 1}.',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          entry.value,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+          ],
+        ),
+      ),
+    );
   }
 }
 
