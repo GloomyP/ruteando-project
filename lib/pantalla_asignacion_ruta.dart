@@ -4,6 +4,240 @@ import 'roles.dart';
 import 'persistencia_rutas.dart';
 import 'pantalla_perfil.dart';
 
+String _formatearFechaEntrega(dynamic valor) {
+  final texto = valor?.toString();
+  if (texto == null || texto.isEmpty) {
+    return 'Hora no registrada';
+  }
+
+  final fecha = DateTime.tryParse(texto);
+  if (fecha == null) {
+    return texto;
+  }
+
+  String dosDigitos(int numero) => numero.toString().padLeft(2, '0');
+  return '${dosDigitos(fecha.day)}/${dosDigitos(fecha.month)}/${fecha.year} '
+      '${dosDigitos(fecha.hour)}:${dosDigitos(fecha.minute)}';
+}
+
+Color _colorEstadoEntrega(String estado) {
+  if (estado == 'Entregado') return const Color(0xFF16A34A);
+  if (estado == 'En camino') return const Color(0xFF2563EB);
+  return const Color(0xFF64748B);
+}
+
+IconData _iconoEstadoEntrega(String estado) {
+  if (estado == 'Entregado') return Icons.check_circle_outline;
+  if (estado == 'En camino') return Icons.local_shipping_outlined;
+  return Icons.schedule_outlined;
+}
+
+class _InfoPill extends StatelessWidget {
+  const _InfoPill({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.color = const Color(0xFF0B0F0D),
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.12)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 8),
+          Text(
+            '$label: ',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[700],
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          Flexible(
+            child: Text(
+              value,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TimelineEntregaItem extends StatelessWidget {
+  const _TimelineEntregaItem({
+    required this.index,
+    required this.texto,
+    required this.estado,
+    this.fechaEntrega,
+  });
+
+  final int index;
+  final String texto;
+  final String estado;
+  final String? fechaEntrega;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _colorEstadoEntrega(estado);
+    final icono = _iconoEstadoEntrega(estado);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Column(
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: color.withValues(alpha: 0.28)),
+                ),
+                child: Text(
+                  '${index + 1}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: color,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Container(width: 2, height: 28, color: const Color(0xFFE5E7EB)),
+            ],
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAF9),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE5E7EB)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    texto,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      _EstadoChip(estado: estado, icono: icono, color: color),
+                      if (fechaEntrega != null)
+                        _HoraEntregaChip(fechaEntrega: fechaEntrega!),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EstadoChip extends StatelessWidget {
+  const _EstadoChip({
+    required this.estado,
+    required this.icono,
+    required this.color,
+  });
+
+  final String estado;
+  final IconData icono;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icono, size: 13, color: color),
+          const SizedBox(width: 5),
+          Text(
+            estado,
+            style: TextStyle(
+              fontSize: 11,
+              color: color,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HoraEntregaChip extends StatelessWidget {
+  const _HoraEntregaChip({required this.fechaEntrega});
+
+  final String fechaEntrega;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0B0F0D),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.schedule, size: 13, color: Colors.white),
+          const SizedBox(width: 5),
+          Text(
+            fechaEntrega,
+            style: const TextStyle(
+              fontSize: 11,
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class PantallaAsignacionRuta extends StatefulWidget {
   const PantallaAsignacionRuta({super.key});
 
@@ -187,10 +421,10 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
                       children: [
                         CircleAvatar(
                           radius: 28,
-                          backgroundColor: Colors.green[100],
+                          backgroundColor: const Color(0xFFE9F8EF),
                           child: Icon(
                             Icons.local_shipping,
-                            color: Colors.green[800],
+                            color: const Color(0xFF0B0F0D),
                             size: 32,
                           ),
                         ),
@@ -290,7 +524,7 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
                   Navigator.of(context).pushReplacementNamed('/rutas'),
               icon: const Icon(Icons.add),
               label: const Text('Nueva Asignación'),
-              backgroundColor: Colors.green[700],
+              backgroundColor: Colors.green[800],
               foregroundColor: Colors.white,
             )
           : null,
@@ -326,7 +560,7 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
             label: const Text('Planificar y Optimizar Ruta'),
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              backgroundColor: Colors.green[700],
+              backgroundColor: Colors.green[800],
             ),
           ),
         ),
@@ -357,12 +591,12 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
 
         return Card(
           margin: const EdgeInsets.only(bottom: 16),
-          elevation: 4,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(20),
+            side: const BorderSide(color: Color(0xFFE5E7EB)),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -373,8 +607,8 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
                       child: Row(
                         children: [
                           CircleAvatar(
-                            backgroundColor: Colors.green[100],
-                            foregroundColor: Colors.green[800],
+                            backgroundColor: Colors.green[800],
+                            foregroundColor: Colors.white,
                             child: const Icon(Icons.person),
                           ),
                           const SizedBox(width: 12),
@@ -412,11 +646,7 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
                 const Divider(height: 24),
                 const Text(
                   'Detalle del trayecto',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
                 Row(
@@ -425,7 +655,7 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
                     const Icon(
                       Icons.trip_origin,
                       size: 16,
-                      color: Colors.green,
+                      color: Color(0xFF2563EB),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -455,22 +685,21 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 10,
                   children: [
-                    Text(
-                      'Distancia: ${asignacion['distancia'] ?? 'N/A'}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
+                    _InfoPill(
+                      icon: Icons.route_outlined,
+                      label: 'Distancia',
+                      value: '${asignacion['distancia'] ?? 'N/A'}',
+                      color: const Color(0xFF16A34A),
                     ),
-                    Text(
-                      'Tiempo: ${asignacion['tiempo'] ?? 'N/A'}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
+                    _InfoPill(
+                      icon: Icons.timer_outlined,
+                      label: 'Tiempo',
+                      value: '${asignacion['tiempo'] ?? 'N/A'}',
+                      color: const Color(0xFF2563EB),
                     ),
                     Text(
                       'Optimización: ${asignacion['criterio'] ?? 'N/A'}',
@@ -486,15 +715,20 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
-                      'Estado de las entregas',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
+                    const Expanded(
+                      child: Text(
+                        'Estado de las entregas',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
+                    const SizedBox(width: 8),
                     Text(
                       'Progreso: $entregados / $total entregados',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
@@ -511,7 +745,9 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
                   child: LinearProgressIndicator(
                     value: porcentaje,
                     backgroundColor: Colors.grey[200],
-                    color: entregados == total ? Colors.green : Colors.orange,
+                    color: entregados == total
+                        ? const Color(0xFF16A34A)
+                        : const Color(0xFFF97316),
                     minHeight: 6,
                   ),
                 ),
@@ -537,73 +773,15 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
                       final texto = parada['texto']?.toString() ?? '';
                       final estado =
                           parada['estado']?.toString() ?? 'Pendiente';
+                      final fechaEntrega = estado == 'Entregado'
+                          ? _formatearFechaEntrega(parada['fechaEntrega'])
+                          : null;
 
-                      Color estadoColor = Colors.grey;
-                      IconData estadoIcon = Icons.pending_outlined;
-                      if (estado == 'En camino') {
-                        estadoColor = Colors.blue;
-                        estadoIcon = Icons.directions_car_outlined;
-                      } else if (estado == 'Entregado') {
-                        estadoColor = Colors.green;
-                        estadoIcon = Icons.check_circle_outline;
-                      }
-
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 10,
-                              backgroundColor: Colors.green[50],
-                              child: Text(
-                                '${idx + 1}',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.green[800],
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                texto,
-                                style: const TextStyle(fontSize: 12),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: estadoColor.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    estadoIcon,
-                                    size: 10,
-                                    color: estadoColor,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    estado,
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: estadoColor,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
+                      return _TimelineEntregaItem(
+                        index: idx,
+                        texto: texto,
+                        estado: estado,
+                        fechaEntrega: fechaEntrega,
                       );
                     }).toList(),
                   ),

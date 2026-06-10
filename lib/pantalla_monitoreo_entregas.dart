@@ -4,6 +4,192 @@ import 'menu_drawer.dart';
 import 'persistencia_rutas.dart';
 import 'pantalla_perfil.dart';
 
+String _formatearFechaEntrega(dynamic valor) {
+  final texto = valor?.toString();
+  if (texto == null || texto.isEmpty) {
+    return 'Hora no registrada';
+  }
+
+  final fecha = DateTime.tryParse(texto);
+  if (fecha == null) {
+    return texto;
+  }
+
+  String dosDigitos(int numero) => numero.toString().padLeft(2, '0');
+  return '${dosDigitos(fecha.day)}/${dosDigitos(fecha.month)}/${fecha.year} '
+      '${dosDigitos(fecha.hour)}:${dosDigitos(fecha.minute)}';
+}
+
+Color _colorEstadoEntrega(String estado) {
+  if (estado == 'Entregado') return const Color(0xFF16A34A);
+  if (estado == 'En camino') return const Color(0xFFF97316);
+  return const Color(0xFF64748B);
+}
+
+IconData _iconoEstadoEntrega(String estado) {
+  if (estado == 'Entregado') return Icons.check_circle_outline;
+  if (estado == 'En camino') return Icons.local_shipping_outlined;
+  return Icons.schedule_outlined;
+}
+
+class _TimelineEntregaItem extends StatelessWidget {
+  const _TimelineEntregaItem({
+    required this.index,
+    required this.texto,
+    required this.estado,
+    this.fechaEntrega,
+  });
+
+  final int index;
+  final String texto;
+  final String estado;
+  final String? fechaEntrega;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _colorEstadoEntrega(estado);
+    final icono = _iconoEstadoEntrega(estado);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Column(
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: color.withValues(alpha: 0.28)),
+                ),
+                child: Text(
+                  '${index + 1}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: color,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Container(width: 2, height: 28, color: const Color(0xFFE5E7EB)),
+            ],
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAF9),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE5E7EB)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    texto,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      _EstadoChip(estado: estado, icono: icono, color: color),
+                      if (fechaEntrega != null)
+                        _HoraEntregaChip(fechaEntrega: fechaEntrega!),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EstadoChip extends StatelessWidget {
+  const _EstadoChip({
+    required this.estado,
+    required this.icono,
+    required this.color,
+  });
+
+  final String estado;
+  final IconData icono;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icono, size: 13, color: color),
+          const SizedBox(width: 5),
+          Text(
+            estado,
+            style: TextStyle(
+              fontSize: 11,
+              color: color,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HoraEntregaChip extends StatelessWidget {
+  const _HoraEntregaChip({required this.fechaEntrega});
+
+  final String fechaEntrega;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0B0F0D),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.schedule, size: 13, color: Colors.white),
+          const SizedBox(width: 5),
+          Text(
+            fechaEntrega,
+            style: const TextStyle(
+              fontSize: 11,
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class PantallaMonitoreoEntregas extends StatefulWidget {
   const PantallaMonitoreoEntregas({super.key});
 
@@ -147,16 +333,15 @@ class _PantallaMonitoreoEntregasState extends State<PantallaMonitoreoEntregas> {
 
         return Card(
           margin: const EdgeInsets.only(bottom: 16),
-          elevation: completada ? 1 : 4,
           color: completada ? Colors.green[50] : Colors.white,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(20),
             side: BorderSide(
               color: completada ? Colors.green.shade300 : Colors.transparent,
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -164,11 +349,11 @@ class _PantallaMonitoreoEntregasState extends State<PantallaMonitoreoEntregas> {
                   children: [
                     CircleAvatar(
                       backgroundColor: completada
-                          ? Colors.green[200]
-                          : Colors.blue[100],
+                          ? const Color(0xFFDCFCE7)
+                          : Colors.green[800],
                       foregroundColor: completada
-                          ? Colors.green[800]
-                          : Colors.blue[800],
+                          ? const Color(0xFF166534)
+                          : Colors.white,
                       child: Icon(
                         completada ? Icons.check_circle : Icons.local_shipping,
                       ),
@@ -190,7 +375,7 @@ class _PantallaMonitoreoEntregasState extends State<PantallaMonitoreoEntregas> {
                             style: TextStyle(
                               fontSize: 12,
                               color: completada
-                                  ? Colors.green[700]
+                                  ? const Color(0xFF16A34A)
                                   : Colors.blue[700],
                               fontWeight: FontWeight.w600,
                             ),
@@ -214,12 +399,16 @@ class _PantallaMonitoreoEntregasState extends State<PantallaMonitoreoEntregas> {
                     value: porcentaje,
                     minHeight: 10,
                     backgroundColor: Colors.grey[200],
-                    color: completada ? Colors.green : Colors.blue,
+                    color: completada
+                        ? const Color(0xFF16A34A)
+                        : const Color(0xFFF97316),
                   ),
                 ),
                 const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                Wrap(
+                  alignment: WrapAlignment.spaceAround,
+                  spacing: 20,
+                  runSpacing: 12,
                   children: [
                     _IndicadorEstado(
                       etiqueta: 'Pendientes',
@@ -234,7 +423,7 @@ class _PantallaMonitoreoEntregasState extends State<PantallaMonitoreoEntregas> {
                     _IndicadorEstado(
                       etiqueta: 'Entregadas',
                       valor: entregados,
-                      color: Colors.green,
+                      color: const Color(0xFF16A34A),
                     ),
                   ],
                 ),
@@ -260,73 +449,15 @@ class _PantallaMonitoreoEntregasState extends State<PantallaMonitoreoEntregas> {
                       final texto = parada['texto']?.toString() ?? '';
                       final estado =
                           parada['estado']?.toString() ?? 'Pendiente';
+                      final fechaEntrega = estado == 'Entregado'
+                          ? _formatearFechaEntrega(parada['fechaEntrega'])
+                          : null;
 
-                      Color estadoColor = Colors.grey;
-                      IconData estadoIcon = Icons.pending_outlined;
-                      if (estado == 'En camino') {
-                        estadoColor = Colors.orange;
-                        estadoIcon = Icons.directions_car_outlined;
-                      } else if (estado == 'Entregado') {
-                        estadoColor = Colors.green;
-                        estadoIcon = Icons.check_circle_outline;
-                      }
-
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 10,
-                              backgroundColor: Colors.green[50],
-                              child: Text(
-                                '${idx + 1}',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.green[800],
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                texto,
-                                style: const TextStyle(fontSize: 12),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: estadoColor.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    estadoIcon,
-                                    size: 10,
-                                    color: estadoColor,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    estado,
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: estadoColor,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
+                      return _TimelineEntregaItem(
+                        index: idx,
+                        texto: texto,
+                        estado: estado,
+                        fechaEntrega: fechaEntrega,
                       );
                     }).toList(),
                   ),
