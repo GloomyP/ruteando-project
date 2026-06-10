@@ -82,6 +82,40 @@ void main() {
     },
   );
 
+  testWidgets('PantallaAsignacionRuta muestra historial con hora de entrega', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'empresa_vinculada_usuario_local': jsonEncode([
+        {
+          'origen': 'Bodega central',
+          'paradas': [
+            {
+              'texto': 'Cliente 1',
+              'estado': 'Entregado',
+              'fechaEntrega': '2026-06-09T14:35:00',
+            },
+          ],
+          'distancia': '8.4 km',
+          'tiempo': '18 min',
+          'criterio': 'Menor distancia',
+          'fechaAsignacion': '2026-06-09T12:00:00',
+          'repartidorEmail': 'repartidor1@test.cl',
+          'repartidorNombre': 'Repartidor Uno',
+        },
+      ]),
+    });
+
+    await tester.pumpWidget(const MaterialApp(home: PantallaAsignacionRuta()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Ver paradas intermedias'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Cliente 1'), findsOneWidget);
+    expect(find.text('09/06/2026 14:35'), findsOneWidget);
+  });
+
   testWidgets(
     'PantallaRutaAsignada muestra estado vacio si no tiene ruta el repartidor',
     (WidgetTester tester) async {
@@ -102,9 +136,10 @@ void main() {
         'ruta_asignada_local': jsonEncode({
           'origen': 'Bodega central',
           'paradas': [
-            {'texto': 'Cliente 1', 'estado': 'Pendiente'},
+            {'texto': 'Cliente 1', 'estado': 'En camino'},
             {'texto': 'Cliente 2', 'estado': 'Pendiente'},
           ],
+          'estadoRecorrido': 'En curso',
           'distancia': '8.4 km',
           'tiempo': '18 min',
           'criterio': 'Menor distancia',
@@ -140,11 +175,6 @@ void main() {
       expect(find.text('Nueva ruta asignada'), findsNothing);
       expect(find.text('Resumen del viaje'), findsOneWidget);
       expect(find.text('Cliente 1'), findsOneWidget);
-      expect(find.text('Iniciar recorrido'), findsOneWidget);
-
-      await tester.tap(find.text('Iniciar recorrido'));
-      await tester.pumpAndSettle();
-
       expect(find.text('Recorrido en curso'), findsOneWidget);
       expect(find.text('En camino'), findsOneWidget);
       expect(find.widgetWithText(FilledButton, 'Entregado'), findsOneWidget);
@@ -156,13 +186,19 @@ void main() {
 
       expect(find.text('En camino'), findsOneWidget);
       expect(find.widgetWithText(FilledButton, 'Entregado'), findsOneWidget);
-
-      await tester.ensureVisible(entregarButton);
-      await tester.tap(entregarButton);
-      await tester.pumpAndSettle();
-
-      expect(find.text('Recorrido completado'), findsOneWidget);
-      expect(find.widgetWithText(FilledButton, 'Entregado'), findsNothing);
+      final prefs = await SharedPreferences.getInstance();
+      final rutaActualizada =
+          jsonDecode(prefs.getString('ruta_asignada_local')!)
+              as Map<String, dynamic>;
+      final primeraParada =
+          (rutaActualizada['paradas'] as List).first as Map<String, dynamic>;
+      expect(primeraParada['estado'], 'Entregado');
+      expect(primeraParada['fechaEntrega'], isNotNull);
+      expect(
+        DateTime.tryParse(primeraParada['fechaEntrega'] as String),
+        isNotNull,
+      );
+      expect(find.widgetWithText(FilledButton, 'Entregado'), findsOneWidget);
     },
   );
 

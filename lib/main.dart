@@ -1788,6 +1788,7 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
       size.toInt(),
     );
     final data = await img.toByteData(format: ui.ImageByteFormat.png);
+    // ignore: deprecated_member_use
     return BitmapDescriptor.fromBytes(data!.buffer.asUint8List());
   }
 
@@ -2056,12 +2057,14 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
     if (index < 0 || index >= paradas.length) return;
 
     paradas[index]['estado'] = 'Entregado';
+    paradas[index]['fechaEntrega'] = DateTime.now().toIso8601String();
 
     final siguiente = paradas.indexWhere(
       (parada) => parada['estado'] == 'Pendiente',
     );
     if (siguiente == -1) {
       _rutaAsignada!['estadoRecorrido'] = 'Completado';
+      _rutaAsignada!['fechaCompletado'] = DateTime.now().toIso8601String();
     } else {
       paradas[siguiente]['estado'] = 'En camino';
       _rutaAsignada!['estadoRecorrido'] = 'En curso';
