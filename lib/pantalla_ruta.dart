@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import 'cierre_sesion.dart';
 import 'directions_service.dart'
     if (dart.library.js) 'directions_service_web.dart';
 import 'location_service.dart' if (dart.library.js) 'location_service_web.dart';
@@ -66,35 +66,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
   Set<Marker> _markers = {};
 
   Future<void> _cerrarSesion(BuildContext context) async {
-    final confirmar = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Cerrar sesion'),
-          content: const Text('¿Quieres cerrar tu sesion de forma segura?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton.icon(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              icon: const Icon(Icons.logout),
-              label: const Text('Cerrar sesion'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmar != true || !context.mounted) {
-      return;
-    }
-
-    final navigator = Navigator.of(context);
-    navigator.pop();
-    navigator.popUntil((route) => route.isFirst);
-    await FirebaseAuth.instance.signOut();
+    await confirmarYCerrarSesion(context);
   }
 
   Future<void> _abrirPantalla(BuildContext context, String ruta) async {
@@ -753,7 +725,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
                   const Divider(height: 1),
                   ListTile(
                     leading: const Icon(Icons.logout),
-                    title: const Text('Cerrar sesiÃ³n'),
+                    title: const Text('Cerrar sesión'),
                     onTap: () => _cerrarSesion(context),
                   ),
                 ],

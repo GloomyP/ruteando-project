@@ -1,6 +1,6 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import 'cierre_sesion.dart';
 import 'roles.dart';
 
 class AppMenuDrawer extends StatelessWidget {
@@ -24,42 +24,6 @@ class AppMenuDrawer extends StatelessWidget {
     }
 
     navigator.pushReplacementNamed(routeName);
-  }
-
-  Future<void> _cerrarSesion(BuildContext context) async {
-    final confirmar = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Cerrar sesion'),
-          content: const Text('¿Quieres cerrar tu sesion de forma segura?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton.icon(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              icon: const Icon(Icons.logout),
-              label: const Text('Cerrar sesion'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmar != true) {
-      return;
-    }
-
-    if (!context.mounted) {
-      return;
-    }
-
-    final navigator = Navigator.of(context);
-    navigator.pop();
-    navigator.popUntil((route) => route.isFirst);
-    await FirebaseAuth.instance.signOut();
   }
 
   @override
@@ -168,7 +132,7 @@ class AppMenuDrawer extends StatelessWidget {
                 ListTile(
                   leading: const Icon(Icons.logout),
                   title: const Text('Cerrar sesion'),
-                  onTap: () => _cerrarSesion(context),
+                  onTap: () => confirmarYCerrarSesion(context),
                 ),
               ],
             );
