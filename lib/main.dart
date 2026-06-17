@@ -14,10 +14,12 @@ import 'pantalla_asignacion_ruta.dart';
 import 'roles.dart';
 import 'pantalla_monitoreo_entregas.dart';
 import 'pantalla_perfil.dart';
+import 'pantalla_inventario.dart';
 import 'perfil_usuario.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:ui' as ui;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'cierre_sesion.dart';
 import 'directions_service.dart'
     if (dart.library.js) 'directions_service_web.dart';
 
@@ -187,6 +189,7 @@ class RuteandoApp extends StatelessWidget {
       ),
       // StreamBuilder escucha automáticamente si Firebase tiene un usuario activo
       routes: {
+        '/login': (context) => const PantallaLogin(),
         '/inicio': (context) =>
             const PantallaProtegidaAdmin(pantalla: PantallaPrincipal()),
         '/repartidores': (context) =>
@@ -197,9 +200,8 @@ class RuteandoApp extends StatelessWidget {
             const PantallaProtegidaAdmin(pantalla: PantallaAsignacionRuta()),
         '/monitoreo-entregas': (context) =>
             const PantallaProtegidaAdmin(pantalla: PantallaMonitoreoEntregas()),
-        '/inventario': (context) => const PantallaProtegidaAdmin(
-          pantalla: PantallaModuloEnDesarrollo(titulo: 'Inventario'),
-        ),
+        '/inventario': (context) =>
+            const PantallaProtegidaAdmin(pantalla: PantallaInventario()),
         '/empresa': (context) =>
             const PantallaProtegidaAdmin(pantalla: PantallaRegistroEmpresa()),
         '/mi-ruta': (context) => const PantallaRutaAsignada(),
@@ -312,15 +314,6 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
     _empresaFuture = _cargarEmpresaVinculada();
   }
 
-  void _abrirModuloEnDesarrollo(BuildContext context, String titulo) {
-    Navigator.pop(context);
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (context) => PantallaModuloEnDesarrollo(titulo: titulo),
-      ),
-    );
-  }
-
   void _abrirConductores(BuildContext context) {
     Navigator.pop(context);
     Navigator.of(context).push(
@@ -355,33 +348,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
   }
 
   Future<void> _cerrarSesion(BuildContext context) async {
-    final confirmar = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Cerrar sesion'),
-          content: const Text('¿Quieres cerrar tu sesion?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton.icon(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              icon: const Icon(Icons.logout),
-              label: const Text('Cerrar sesion'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmar != true || !context.mounted) {
-      return;
-    }
-
-    Navigator.pop(context);
-    await FirebaseAuth.instance.signOut();
+    await confirmarYCerrarSesion(context, mensaje: 'Quieres cerrar tu sesion?');
   }
 
   void _abrirPerfilSuperior(BuildContext context) {
@@ -481,7 +448,10 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
               ListTile(
                 leading: const Icon(Icons.inventory_2_outlined),
                 title: const Text('Inventario'),
-                onTap: () => _abrirModuloEnDesarrollo(context, 'Inventario'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.of(context).pushReplacementNamed('/inventario');
+                },
               ),
               ListTile(
                 leading: const Icon(Icons.business_outlined),
@@ -2615,32 +2585,7 @@ class PantallaPerfilLegacy extends StatelessWidget {
   const PantallaPerfilLegacy({super.key});
 
   Future<void> _cerrarSesion(BuildContext context) async {
-    final confirmar = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Cerrar sesion'),
-          content: const Text('¿Quieres cerrar tu sesion?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton.icon(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              icon: const Icon(Icons.logout),
-              label: const Text('Cerrar sesion'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmar != true || !context.mounted) return;
-
-    // Limpia las pantallas abiertas para dejar visible el login.
-    Navigator.of(context).popUntil((route) => route.isFirst);
-    await FirebaseAuth.instance.signOut();
+    await confirmarYCerrarSesion(context, mensaje: 'Quieres cerrar tu sesion?');
   }
 
   @override
@@ -2757,29 +2702,10 @@ class PantallaDashboard extends StatelessWidget {
   const PantallaDashboard({super.key});
 
   Future<void> _cerrarSesion(BuildContext context) async {
-    final confirmar = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Cerrar sesión'),
-          content: const Text('¿Esta seguro del cierre de sesión?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Cerrar sesión'),
-            ),
-          ],
-        );
-      },
+    await confirmarYCerrarSesion(
+      context,
+      mensaje: 'Esta seguro del cierre de sesion?',
     );
-
-    if (confirmar == true) {
-      await FirebaseAuth.instance.signOut();
-    }
   }
 
   @override
