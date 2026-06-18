@@ -36,6 +36,10 @@ String asignacionesGlobalesKey() {
   return empresaUsuarioKey();
 }
 
+String historialRutasTerminadasKey() {
+  return 'historial_rutas_terminadas_${asignacionesGlobalesKey()}';
+}
+
 Future<String> empresaOperativaKey() async {
   final fallback = empresaUsuarioKey();
 
@@ -81,6 +85,10 @@ String notificacionRutaKey(String email) {
 
 String _notificacionRutaLocalKey(String email) {
   return 'notificacion_ruta_${notificacionRutaKey(email)}';
+}
+
+String _notificacionesInternasLocalKey() {
+  return 'notificaciones_internas_${asignacionesGlobalesKey()}';
 }
 
 // ==========================================
@@ -224,6 +232,96 @@ Future<void> marcarNotificacionRutaLeida(String email) async {
       });
 }
 
+// ==========================================
+// NOTIFICACIONES INTERNAS (ADMINISTRADOR)
+// ==========================================
+Future<List<Map<String, dynamic>>> cargarNotificacionesInternas() async {
+  try {
+    final key = await empresaOperativaKey();
+    final doc = await _firestore
+        .collection('notificaciones_internas')
+        .doc(key)
+        .get();
+    final data = doc.data();
+    if (data != null && data['lista'] is List) {
+      final notificaciones = (data['lista'] as List)
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _notificacionesInternasLocalKey(),
+        jsonEncode(notificaciones),
+      );
+      return notificaciones;
+    }
+  } catch (_) {}
+
+  final prefs = await SharedPreferences.getInstance();
+  final data = prefs.getString(_notificacionesInternasLocalKey());
+  if (data == null) {
+    return [];
+  }
+
+  final decoded = jsonDecode(data);
+  if (decoded is List) {
+    return decoded
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  return [];
+}
+
+Stream<List<Map<String, dynamic>>> escucharNotificacionesInternas() {
+  if (Firebase.apps.isEmpty) {
+    return Stream.fromFuture(cargarNotificacionesInternas());
+  }
+
+  return Stream.fromFuture(empresaOperativaKey()).asyncExpand((key) {
+    return _firestore
+        .collection('notificaciones_internas')
+        .doc(key)
+        .snapshots()
+        .asyncMap((doc) async {
+          final data = doc.data();
+          if (data != null && data['lista'] is List) {
+            final notificaciones = (data['lista'] as List)
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList();
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString(
+              _notificacionesInternasLocalKey(),
+              jsonEncode(notificaciones),
+            );
+            return notificaciones;
+          }
+          return cargarNotificacionesInternas();
+        });
+  });
+}
+
+Future<void> guardarNotificacionesInternas(
+  List<Map<String, dynamic>> notificaciones,
+) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString(
+    _notificacionesInternasLocalKey(),
+    jsonEncode(notificaciones),
+  );
+
+  if (Firebase.apps.isEmpty) {
+    return;
+  }
+
+  final key = await empresaOperativaKey();
+  await _firestore.collection('notificaciones_internas').doc(key).set({
+    'lista': notificaciones,
+  });
+}
+
 Future<void> borrarRutaAsignada(String email) async {
   final prefs = await SharedPreferences.getInstance();
   await prefs.remove(_rutaAsignadaLocalKey(email));
@@ -295,6 +393,106 @@ Future<void> guardarAsignacionesGlobales(
 }
 
 // ==========================================
+// HISTORIAL DE RUTAS TERMINADAS
+// ==========================================
+Future<List<Map<String, dynamic>>> cargarHistorialRutasTerminadas() async {
+  try {
+    final key = await empresaOperativaKey();
+    final doc = await _firestore
+        .collection('historial_rutas_terminadas')
+        .doc(key)
+        .get();
+    final data = doc.data();
+    if (data != null && data['lista'] is List) {
+      final historial = (data['lista'] as List)
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        historialRutasTerminadasKey(),
+        jsonEncode(historial),
+      );
+      return historial;
+    }
+  } catch (_) {}
+
+  final prefs = await SharedPreferences.getInstance();
+  final data = prefs.getString(historialRutasTerminadasKey());
+  if (data == null) {
+    return [];
+  }
+
+  final decoded = jsonDecode(data);
+  if (decoded is List) {
+    return decoded
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  return [];
+}
+
+Future<void> guardarHistorialRutasTerminadas(
+  List<Map<String, dynamic>> historial,
+) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString(historialRutasTerminadasKey(), jsonEncode(historial));
+
+  if (Firebase.apps.isEmpty) {
+    return;
+  }
+
+  final key = await empresaOperativaKey();
+  await _firestore.collection('historial_rutas_terminadas').doc(key).set({
+    'lista': historial,
+  });
+}
+
+Future<void> registrarRutaTerminada(Map<String, dynamic> ruta) async {
+  final historial = await cargarHistorialRutasTerminadas();
+  final fechaTermino =
+      ruta['fechaCompletado']?.toString() ?? DateTime.now().toIso8601String();
+  final email = ruta['repartidorEmail']?.toString().toLowerCase().trim() ?? '';
+  final id =
+      ruta['historialId']?.toString() ??
+      ruta['rutaId']?.toString() ??
+      ruta['id']?.toString() ??
+      'terminada_${email}_$fechaTermino';
+
+  final rutaTerminada = {
+    ...ruta,
+    'historialId': id,
+    'estadoRecorrido': ruta['estadoRecorrido'] ?? 'Completado',
+    'estadoFinal':
+        ruta['estadoFinal'] ?? ruta['estadoRecorrido'] ?? 'Completado',
+    'fechaCompletado': fechaTermino,
+  };
+
+  historial.removeWhere((item) => item['historialId']?.toString() == id);
+  historial.insert(0, rutaTerminada);
+  await guardarHistorialRutasTerminadas(historial);
+}
+
+Future<void> liberarRepartidorDeRutaActiva(String email) async {
+  final emailNormalizado = email.toLowerCase().trim();
+  if (emailNormalizado.isEmpty) {
+    return;
+  }
+
+  final asignaciones = await cargarAsignacionesGlobales();
+  asignaciones.removeWhere((asignacion) {
+    final asignado = asignacion['repartidorEmail']
+        ?.toString()
+        .toLowerCase()
+        .trim();
+    return asignado == emailNormalizado;
+  });
+  await guardarAsignacionesGlobales(asignaciones);
+}
+
+// ==========================================
 // CONDUCTORES / REPARTIDORES VINCULADOS
 // ==========================================
 String conductoresUsuarioKey() {
@@ -324,6 +522,15 @@ Future<List<Map<String, String>>> cargarConductoresVinculados() async {
     }
   } catch (_) {}
   return [];
+}
+
+Future<List<Map<String, String>>> cargarRepartidoresAsignables() async {
+  final conductores = await cargarConductoresVinculados();
+  return conductores.where(esConductorRepartidor).toList();
+}
+
+bool esConductorRepartidor(Map<String, String> conductor) {
+  return conductor['rol']?.toString().trim() == 'repartidor';
 }
 
 Future<void> guardarConductoresVinculados(

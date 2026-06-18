@@ -13,9 +13,12 @@ import 'pantalla_ruta.dart';
 import 'pantalla_asignacion_ruta.dart';
 import 'roles.dart';
 import 'pantalla_monitoreo_entregas.dart';
-import 'pantalla_perfil.dart';
 import 'pantalla_inventario.dart';
 import 'perfil_usuario.dart';
+import 'services/app_settings_service.dart';
+import 'services/notificaciones_service.dart';
+import 'widgets/campana_notificaciones_admin.dart';
+import 'widgets/menu_perfil_appbar.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:ui' as ui;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -38,8 +41,12 @@ class _EstadoSesion {
 }
 
 Future<_EstadoSesion> _cargarEstadoSesion(User user) async {
-  final deshabilitado = await usuarioDeshabilitado(user: user);
-  final rol = await cargarRolUsuario(user: user);
+  final resultadosIniciales = await Future.wait<Object>([
+    usuarioDeshabilitado(user: user),
+    cargarRolUsuario(user: user),
+  ]);
+  final deshabilitado = resultadosIniciales[0] as bool;
+  final rol = resultadosIniciales[1] as RolUsuario;
   final requiereCambio = rol == RolUsuario.repartidor
       ? await debeCambiarContrasena(user: user)
       : false;
@@ -169,19 +176,55 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Inicializamos Firebase al arrancar la app
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await appSettingsService.cargar();
   runApp(const RuteandoApp());
 }
 
-class RuteandoApp extends StatelessWidget {
+class RuteandoApp extends StatefulWidget {
   const RuteandoApp({super.key});
 
   @override
+  State<RuteandoApp> createState() => _RuteandoAppState();
+}
+
+class _RuteandoAppState extends State<RuteandoApp> {
+  @override
+  void initState() {
+    super.initState();
+    appSettingsService.addListener(_actualizarConfiguracion);
+  }
+
+  @override
+  void dispose() {
+    appSettingsService.removeListener(_actualizarConfiguracion);
+    super.dispose();
+  }
+
+  void _actualizarConfiguracion() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final settings = appSettingsService.value;
     return MaterialApp(
       title: 'Ruteando',
       debugShowCheckedModeBanner: false,
+      themeMode: settings.themeMode,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
+        useMaterial3: true,
+        inputDecorationTheme: const InputDecorationTheme(
+          border: OutlineInputBorder(),
+        ),
+      ),
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.green,
+          brightness: Brightness.dark,
+        ),
         useMaterial3: true,
         inputDecorationTheme: const InputDecorationTheme(
           border: OutlineInputBorder(),
@@ -206,49 +249,98 @@ class RuteandoApp extends StatelessWidget {
             const PantallaProtegidaAdmin(pantalla: PantallaRegistroEmpresa()),
         '/mi-ruta': (context) => const PantallaRutaAsignada(),
       },
-      home: StreamBuilder<User?>(
-        stream: FirebaseAuth.instance.authStateChanges(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
-          }
-          final user = snapshot.data;
-          if (user != null) {
-            return FutureBuilder<_EstadoSesion>(
-              future: _cargarEstadoSesion(user),
-              builder: (context, estadoSnapshot) {
-                if (estadoSnapshot.connectionState == ConnectionState.waiting) {
-                  return const Scaffold(
-                    body: Center(child: CircularProgressIndicator()),
-                  );
-                }
+      home: const _AuthGate(),
+    );
+  }
+}
 
-                final estado =
-                    estadoSnapshot.data ??
-                    const _EstadoSesion(
-                      rol: RolUsuario.admin,
-                      debeCambiarContrasena: false,
-                      cuentaDeshabilitada: false,
-                    );
+class _AuthGate extends StatefulWidget {
+  const _AuthGate();
 
-                if (estado.cuentaDeshabilitada) {
-                  return const PantallaCuentaDeshabilitada();
-                }
+  @override
+  State<_AuthGate> createState() => _AuthGateState();
+}
 
-                if (estado.rol == RolUsuario.repartidor) {
-                  return estado.debeCambiarContrasena
-                      ? const PantallaCambioContrasenaObligatorio()
-                      : const PantallaRutaAsignada();
-                }
+class _AuthGateState extends State<_AuthGate> {
+  String? _uidCargado;
+  Future<_EstadoSesion>? _estadoSesionFuture;
 
-                return const PantallaPrincipal();
-              },
-            );
-          }
+  Future<_EstadoSesion> _estadoSesion(User user) {
+    if (_uidCargado != user.uid || _estadoSesionFuture == null) {
+      _uidCargado = user.uid;
+      _estadoSesionFuture = _cargarEstadoSesion(user);
+    }
+    return _estadoSesionFuture!;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const _PantallaCargaSesion(mensaje: 'Cargando sesion...');
+        }
+
+        final user = snapshot.data;
+        if (user == null) {
+          _uidCargado = null;
+          _estadoSesionFuture = null;
           return const PantallaLogin();
-        },
+        }
+
+        return FutureBuilder<_EstadoSesion>(
+          future: _estadoSesion(user),
+          builder: (context, estadoSnapshot) {
+            if (estadoSnapshot.connectionState == ConnectionState.waiting) {
+              return const _PantallaCargaSesion(
+                mensaje: 'Preparando tu cuenta...',
+              );
+            }
+
+            final estado =
+                estadoSnapshot.data ??
+                const _EstadoSesion(
+                  rol: RolUsuario.admin,
+                  debeCambiarContrasena: false,
+                  cuentaDeshabilitada: false,
+                );
+
+            if (estado.cuentaDeshabilitada) {
+              return const PantallaCuentaDeshabilitada();
+            }
+
+            if (estado.rol == RolUsuario.repartidor) {
+              return estado.debeCambiarContrasena
+                  ? const PantallaCambioContrasenaObligatorio()
+                  : const PantallaRutaAsignada();
+            }
+
+            return const PantallaPrincipal();
+          },
+        );
+      },
+    );
+  }
+}
+
+class _PantallaCargaSesion extends StatelessWidget {
+  const _PantallaCargaSesion({required this.mensaje});
+
+  final String mensaje;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text(mensaje, style: const TextStyle(fontWeight: FontWeight.w600)),
+          ],
+        ),
       ),
     );
   }
@@ -282,17 +374,11 @@ Widget _buildMenuDrawer(BuildContext context, {String? currentRoute}) {
 }
 
 List<Widget> _accionesPerfil(BuildContext context) {
-  return [
-    IconButton(
-      tooltip: 'Perfil',
-      onPressed: () {
-        Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: (context) => const PantallaPerfil()),
-        );
-      },
-      icon: const Icon(Icons.account_circle),
-    ),
-  ];
+  return const [MenuPerfilAppBar()];
+}
+
+List<Widget> _accionesAdmin(BuildContext context) {
+  return [CampanaNotificacionesAdmin(), ..._accionesPerfil(context)];
 }
 
 // ==========================================
@@ -351,12 +437,6 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
     await confirmarYCerrarSesion(context, mensaje: 'Quieres cerrar tu sesion?');
   }
 
-  void _abrirPerfilSuperior(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (context) => const PantallaPerfil()),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -364,13 +444,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
         title: const Text('Ruteando'),
         backgroundColor: Colors.green[800],
         foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            tooltip: 'Perfil',
-            onPressed: () => _abrirPerfilSuperior(context),
-            icon: const Icon(Icons.account_circle),
-          ),
-        ],
+        actions: _accionesAdmin(context),
       ),
       drawer: Drawer(
         child: SafeArea(
@@ -1157,7 +1231,7 @@ class _PantallaConductoresState extends State<PantallaConductores> {
         title: const Text('Repartidores'),
         backgroundColor: Colors.green[800],
         foregroundColor: Colors.white,
-        actions: _accionesPerfil(context),
+        actions: _accionesAdmin(context),
       ),
       drawer: _buildMenuDrawer(context, currentRoute: '/repartidores'),
       body: SafeArea(
@@ -1526,7 +1600,7 @@ class _PantallaRegistroEmpresaState extends State<PantallaRegistroEmpresa> {
         title: const Text('Registro de empresa'),
         backgroundColor: Colors.green[800],
         foregroundColor: Colors.white,
-        actions: _accionesPerfil(context),
+        actions: _accionesAdmin(context),
       ),
       drawer: _buildMenuDrawer(context, currentRoute: '/empresa'),
       body: SafeArea(
@@ -1967,6 +2041,23 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
     final email = _driverEmail;
     await guardarRutaAsignada(email, ruta);
 
+    final paradas = ruta['paradas'] as List? ?? [];
+    final rutaCompletada =
+        ruta['estadoRecorrido'] == 'Completado' ||
+        (paradas.isNotEmpty &&
+            paradas.every((parada) {
+              if (parada is! Map) {
+                return false;
+              }
+              return parada['estado'] == 'Entregado';
+            }));
+
+    if (rutaCompletada) {
+      await registrarRutaTerminada(ruta);
+      await liberarRepartidorDeRutaActiva(email);
+      return;
+    }
+
     final globalAssignments = await cargarAsignacionesGlobales();
     final idx = globalAssignments.indexWhere(
       (a) => a['repartidorEmail'] == email,
@@ -2003,6 +2094,7 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
     } else {
       paradas[primeraPendiente]['estado'] = 'En camino';
       _rutaAsignada!['estadoRecorrido'] = 'En curso';
+      _rutaAsignada!['fechaInicio'] ??= DateTime.now().toIso8601String();
     }
 
     _rutaAsignada!['paradas'] = paradas;
@@ -2026,15 +2118,19 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
 
     if (index < 0 || index >= paradas.length) return;
 
+    final estadoAnterior = paradas[index]['estado']?.toString();
+    final fechaEntrega = DateTime.now();
+
     paradas[index]['estado'] = 'Entregado';
-    paradas[index]['fechaEntrega'] = DateTime.now().toIso8601String();
+    paradas[index]['fechaEntrega'] = fechaEntrega.toIso8601String();
 
     final siguiente = paradas.indexWhere(
       (parada) => parada['estado'] == 'Pendiente',
     );
     if (siguiente == -1) {
       _rutaAsignada!['estadoRecorrido'] = 'Completado';
-      _rutaAsignada!['fechaCompletado'] = DateTime.now().toIso8601String();
+      _rutaAsignada!['fechaCompletado'] = fechaEntrega.toIso8601String();
+      _rutaAsignada!['estadoFinal'] = 'Completado';
     } else {
       paradas[siguiente]['estado'] = 'En camino';
       _rutaAsignada!['estadoRecorrido'] = 'En curso';
@@ -2042,6 +2138,21 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
 
     _rutaAsignada!['paradas'] = paradas;
     await _guardarRutaActualizada(_rutaAsignada!);
+    if (estadoAnterior != 'Entregado') {
+      try {
+        await NotificacionesService().crearNotificacionEntrega(
+          nombreRepartidor:
+              _rutaAsignada!['repartidorNombre']?.toString() ?? '',
+          emailRepartidor: _driverEmail,
+          direccion: paradas[index]['texto']?.toString() ?? '',
+          rutaId: (_rutaAsignada!['rutaId'] ?? _rutaAsignada!['id'])
+              ?.toString(),
+          fecha: fechaEntrega,
+        );
+      } catch (e) {
+        debugPrint('No se pudo crear la notificacion interna: $e');
+      }
+    }
     await _actualizarMarcadores(
       paradas,
     ); // Actualiza los colores en el mapa al instante
@@ -2079,6 +2190,7 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
   }
 
   Widget _buildRutaConMapaCompleto() {
+    final colors = Theme.of(context).colorScheme;
     final mostrarNotificacion =
         _notificacionRuta != null && _notificacionRuta!['leida'] != true;
 
@@ -2122,7 +2234,7 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
                 child: Material(
                   elevation: 10,
                   borderRadius: BorderRadius.circular(16),
-                  color: Colors.white,
+                  color: colors.surface,
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: _buildDetalleRuta(),
@@ -2203,6 +2315,7 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
   }
 
   Widget _buildNotificacionRuta() {
+    final colors = Theme.of(context).colorScheme;
     final titulo =
         _notificacionRuta!['titulo']?.toString() ?? 'Nueva ruta asignada';
     final mensaje =
@@ -2217,10 +2330,10 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
 
     return Card(
       elevation: 3,
-      color: Colors.green[50],
+      color: colors.primaryContainer,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.green.shade200),
+        side: BorderSide(color: colors.primary),
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -2230,7 +2343,10 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.notifications_active, color: Colors.green[800]),
+                Icon(
+                  Icons.notifications_active,
+                  color: colors.onPrimaryContainer,
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -2238,39 +2354,64 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
                     children: [
                       Text(
                         titulo,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
+                          color: colors.onPrimaryContainer,
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Text(mensaje, style: const TextStyle(fontSize: 13)),
+                      Text(
+                        mensaje,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: colors.onPrimaryContainer,
+                        ),
+                      ),
                     ],
                   ),
                 ),
               ],
             ),
-            const Divider(height: 20),
+            Divider(height: 20, color: colors.onPrimaryContainer),
             Text(
               'Origen: $origen',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12),
+              style: TextStyle(fontSize: 12, color: colors.onPrimaryContainer),
             ),
             const SizedBox(height: 4),
             Wrap(
               spacing: 12,
               runSpacing: 4,
               children: [
-                Text('Paradas: $paradas', style: const TextStyle(fontSize: 12)),
+                Text(
+                  'Paradas: $paradas',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: colors.onPrimaryContainer,
+                  ),
+                ),
                 Text(
                   'Distancia: $distancia',
-                  style: const TextStyle(fontSize: 12),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: colors.onPrimaryContainer,
+                  ),
                 ),
-                Text('Tiempo: $tiempo', style: const TextStyle(fontSize: 12)),
+                Text(
+                  'Tiempo: $tiempo',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: colors.onPrimaryContainer,
+                  ),
+                ),
                 Text(
                   'Criterio: $criterio',
-                  style: const TextStyle(fontSize: 12),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: colors.onPrimaryContainer,
+                  ),
                 ),
               ],
             ),
@@ -2282,7 +2423,8 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
                 icon: const Icon(Icons.route),
                 label: const Text('Ver ruta'),
                 style: FilledButton.styleFrom(
-                  backgroundColor: Colors.green[700],
+                  backgroundColor: colors.primary,
+                  foregroundColor: colors.onPrimary,
                 ),
               ),
             ),
@@ -2293,6 +2435,8 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
   }
 
   Widget _buildDetalleRuta() {
+    final colors = Theme.of(context).colorScheme;
+    final isDark = colors.brightness == Brightness.dark;
     final origen = _rutaAsignada!['origen']?.toString() ?? 'No especificado';
     final paradas = _rutaAsignada!['paradas'] as List? ?? [];
     final distancia = _rutaAsignada!['distancia']?.toString() ?? 'N/A';
@@ -2317,32 +2461,34 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
       children: [
         Card(
           elevation: 3,
+          color: isDark ? colors.surfaceContainerHighest : colors.surface,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: colors.outlineVariant),
           ),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Resumen del viaje',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  style: TextStyle(
+                    color: colors.onSurface,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(
-                      Icons.trip_origin,
-                      size: 16,
-                      color: Colors.green,
-                    ),
+                    Icon(Icons.trip_origin, size: 16, color: colors.primary),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         'Origen: $origen',
-                        style: const TextStyle(fontSize: 13),
+                        style: TextStyle(fontSize: 13, color: colors.onSurface),
                       ),
                     ),
                   ],
@@ -2354,25 +2500,27 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
                   children: [
                     Text(
                       'Distancia: $distancia',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
+                        color: colors.onSurface,
                       ),
                     ),
                     Text(
                       'Tiempo estimado: $tiempo',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
+                        color: colors.onSurface,
                       ),
                     ),
                   ],
                 ),
-                const Divider(height: 24),
+                Divider(height: 24, color: colors.outlineVariant),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Expanded(
+                    Expanded(
                       child: Text(
                         'Progreso de entregas',
                         maxLines: 1,
@@ -2380,15 +2528,17 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
+                          color: colors.onSurface,
                         ),
                       ),
                     ),
                     const SizedBox(width: 8),
                     Text(
                       '$entregados / $total completadas',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
+                        color: colors.onSurface,
                       ),
                     ),
                   ],
@@ -2400,7 +2550,7 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
                     value: porcentaje,
                     minHeight: 6,
                     color: completado ? Colors.green : Colors.orange,
-                    backgroundColor: Colors.grey[200],
+                    backgroundColor: colors.surfaceContainerHighest,
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -2408,21 +2558,24 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.green[50],
+                      color: colors.primaryContainer,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.green.shade200),
+                      border: Border.all(color: colors.primary),
                     ),
                     child: Row(
                       children: [
                         Icon(
                           Icons.check_circle_outline,
-                          color: Colors.green[800],
+                          color: colors.onPrimaryContainer,
                         ),
                         const SizedBox(width: 8),
-                        const Expanded(
+                        Expanded(
                           child: Text(
                             'Recorrido completado',
-                            style: TextStyle(fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                              color: colors.onPrimaryContainer,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ],
@@ -2437,19 +2590,26 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
                       label: const Text('Iniciar recorrido'),
                       style: FilledButton.styleFrom(
                         backgroundColor: Colors.green[700],
+                        foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
                     ),
                   )
                 else
-                  const Row(
+                  Row(
                     children: [
-                      Icon(Icons.local_shipping_outlined, color: Colors.blue),
-                      SizedBox(width: 8),
+                      Icon(
+                        Icons.local_shipping_outlined,
+                        color: colors.primary,
+                      ),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           'Recorrido en curso',
-                          style: TextStyle(fontWeight: FontWeight.w600),
+                          style: TextStyle(
+                            color: colors.onSurface,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ],
@@ -2462,17 +2622,22 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Expanded(
+            Expanded(
               child: Text(
                 'Paradas en ruta',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  color: colors.onSurface,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
             IconButton(
               tooltip: 'Actualizar lista',
               onPressed: _cargarRuta,
+              color: colors.onSurface,
               icon: const Icon(Icons.refresh),
             ),
           ],
@@ -2490,21 +2655,48 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
                 final esParadaActual =
                     recorridoIniciado && estado == 'En camino';
 
-                Color estadoColor = Colors.grey;
-                if (estado == 'En camino') estadoColor = Colors.blue;
-                if (estado == 'Entregado') estadoColor = Colors.green;
+                var estadoColor = colors.onSurfaceVariant;
+                var estadoFondo = isDark
+                    ? colors.surfaceContainerHigh
+                    : colors.surfaceContainerHighest;
+                if (estado == 'En camino') {
+                  estadoColor = isDark
+                      ? const Color(0xFF93C5FD)
+                      : Colors.blue.shade700;
+                  estadoFondo = isDark
+                      ? const Color(0xFF1E3A8A)
+                      : Colors.blue.withValues(alpha: 0.12);
+                }
+                if (estado == 'Entregado') {
+                  estadoColor = isDark
+                      ? const Color(0xFF86EFAC)
+                      : Colors.green.shade700;
+                  estadoFondo = isDark
+                      ? const Color(0xFF14532D)
+                      : Colors.green.withValues(alpha: 0.18);
+                }
 
                 return Card(
                   margin: const EdgeInsets.only(bottom: 12),
+                  color: isDark
+                      ? colors.surfaceContainerHighest
+                      : colors.surface,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(color: colors.outlineVariant),
+                  ),
                   child: ListTile(
                     leading: CircleAvatar(
-                      backgroundColor: estadoColor.withValues(alpha: 0.1),
+                      backgroundColor: estadoFondo,
                       foregroundColor: estadoColor,
                       child: Text('${index + 1}'),
                     ),
                     title: Text(
                       texto,
-                      style: const TextStyle(fontWeight: FontWeight.w500),
+                      style: TextStyle(
+                        color: colors.onSurface,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     subtitle: Padding(
                       padding: const EdgeInsets.only(top: 8),
@@ -2516,12 +2708,11 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
                           Chip(
                             label: Text(estado),
                             visualDensity: VisualDensity.compact,
-                            backgroundColor: estadoColor.withValues(
-                              alpha: 0.12,
-                            ),
+                            backgroundColor: estadoFondo,
+                            side: BorderSide(color: estadoColor),
                             labelStyle: TextStyle(
                               color: estadoColor,
-                              fontWeight: FontWeight.w600,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                           if (esParadaActual)
@@ -2531,6 +2722,7 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
                               label: const Text('Entregado'),
                               style: FilledButton.styleFrom(
                                 backgroundColor: Colors.green[700],
+                                foregroundColor: Colors.white,
                                 visualDensity: VisualDensity.compact,
                               ),
                             ),
@@ -2561,7 +2753,7 @@ class PantallaModuloEnDesarrollo extends StatelessWidget {
         title: Text(titulo),
         backgroundColor: Colors.green[800],
         foregroundColor: Colors.white,
-        actions: _accionesPerfil(context),
+        actions: _accionesAdmin(context),
       ),
       drawer: _buildMenuDrawer(context, currentRoute: '/inventario'),
       body: const Center(
@@ -2870,7 +3062,7 @@ class _PantallaCambioContrasenaObligatorioState
                   const SizedBox(height: 24),
                   TextFormField(
                     controller: _passwordController,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Nueva contrasena',
                       prefixIcon: Icon(Icons.lock),
                     ),
@@ -2882,7 +3074,7 @@ class _PantallaCambioContrasenaObligatorioState
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _confirmPasswordController,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Confirmar contrasena',
                       prefixIcon: Icon(Icons.lock_outline),
                     ),
@@ -2941,6 +3133,7 @@ class _PantallaLoginState extends State<PantallaLogin> {
   String _email = '';
   String _password = '';
   bool _isLoading = false;
+  bool _mostrarPassword = false;
   String? _errorMessage;
 
   PageRouteBuilder<void> _buildSlideRoute(Widget page) {
@@ -2974,6 +3167,7 @@ class _PantallaLoginState extends State<PantallaLogin> {
       );
       final deshabilitado = await usuarioDeshabilitado();
       if (deshabilitado) {
+        await limpiarEstadoSesionActual();
         await FirebaseAuth.instance.signOut();
         if (!mounted) {
           return;
@@ -3031,7 +3225,7 @@ class _PantallaLoginState extends State<PantallaLogin> {
                   ),
                   const SizedBox(height: 32),
                   TextFormField(
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Correo electrónico',
                       prefixIcon: Icon(Icons.email),
                     ),
@@ -3043,11 +3237,26 @@ class _PantallaLoginState extends State<PantallaLogin> {
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Contraseña',
-                      prefixIcon: Icon(Icons.lock),
+                      prefixIcon: const Icon(Icons.lock),
+                      suffixIcon: IconButton(
+                        tooltip: _mostrarPassword
+                            ? 'Ocultar contrasena'
+                            : 'Mostrar contrasena',
+                        onPressed: () {
+                          setState(() {
+                            _mostrarPassword = !_mostrarPassword;
+                          });
+                        },
+                        icon: Icon(
+                          _mostrarPassword
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                        ),
+                      ),
                     ),
-                    obscureText: true,
+                    obscureText: !_mostrarPassword,
                     validator: (v) => (v == null || v.length < 6)
                         ? 'Mínimo 6 caracteres'
                         : null,
@@ -3116,6 +3325,7 @@ class PantallaCuentaDeshabilitada extends StatelessWidget {
   const PantallaCuentaDeshabilitada({super.key});
 
   Future<void> _cerrarSesion() async {
+    await limpiarEstadoSesionActual();
     await FirebaseAuth.instance.signOut();
   }
 

@@ -5,8 +5,9 @@ import 'menu_drawer.dart';
 import 'models/movimiento_inventario.dart';
 import 'models/producto_inventario.dart';
 import 'models/stock_repartidor_inventario.dart';
-import 'pantalla_perfil.dart';
 import 'services/inventario_service.dart';
+import 'widgets/campana_notificaciones_admin.dart';
+import 'widgets/menu_perfil_appbar.dart';
 
 class PantallaInventario extends StatefulWidget {
   const PantallaInventario({super.key});
@@ -43,30 +44,7 @@ class _PantallaInventarioState extends State<PantallaInventario> {
         title: const Text('Inventario'),
         backgroundColor: Colors.green[800],
         foregroundColor: Colors.white,
-        actions: [
-          StreamBuilder<List<ProductoInventario>>(
-            stream: _inventarioService.obtenerAlertasStock(),
-            builder: (context, snapshot) {
-              final alertas = snapshot.data ?? const <ProductoInventario>[];
-              return _CampanaAlertasInventario(
-                alertas: alertas,
-                cargando: snapshot.connectionState == ConnectionState.waiting,
-                onPressed: () => _mostrarAlertasInventario(alertas),
-              );
-            },
-          ),
-          IconButton(
-            tooltip: 'Perfil',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (context) => const PantallaPerfil(),
-                ),
-              );
-            },
-            icon: const Icon(Icons.account_circle),
-          ),
-        ],
+        actions: [CampanaNotificacionesAdmin(), const MenuPerfilAppBar()],
       ),
       drawer: const AppMenuDrawer(currentRoute: '/inventario'),
       body: StreamBuilder<List<ProductoInventario>>(
@@ -396,49 +374,6 @@ class _PantallaInventarioState extends State<PantallaInventario> {
     descripcionController.dispose();
     stockActualController.dispose();
     stockMinimoController.dispose();
-  }
-
-  Future<void> _mostrarAlertasInventario(
-    List<ProductoInventario> alertas,
-  ) async {
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          insetPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 24,
-          ),
-          title: const Text('Notificaciones de inventario'),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: alertas.isEmpty
-                ? const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 18),
-                    child: Text('No hay notificaciones de inventario'),
-                  )
-                : SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        for (var i = 0; i < alertas.length; i++) ...[
-                          _AlertaStockCard(producto: alertas[i]),
-                          if (i != alertas.length - 1)
-                            const SizedBox(height: 8),
-                        ],
-                      ],
-                    ),
-                  ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cerrar'),
-            ),
-          ],
-        );
-      },
-    );
   }
 
   Future<void> _abrirFormularioStockRepartidor([
@@ -1222,63 +1157,6 @@ class _AccionesInventario extends StatelessWidget {
   }
 }
 
-class _CampanaAlertasInventario extends StatelessWidget {
-  const _CampanaAlertasInventario({
-    required this.alertas,
-    required this.cargando,
-    required this.onPressed,
-  });
-
-  final List<ProductoInventario> alertas;
-  final bool cargando;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final cantidad = alertas.length;
-
-    return Padding(
-      padding: const EdgeInsets.only(right: 4),
-      child: IconButton(
-        tooltip: 'Notificaciones de inventario',
-        onPressed: onPressed,
-        icon: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Icon(cargando ? Icons.notifications_none : Icons.notifications),
-            if (cantidad > 0)
-              Positioned(
-                right: -7,
-                top: -7,
-                child: Container(
-                  constraints: const BoxConstraints(
-                    minWidth: 18,
-                    minHeight: 18,
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 5),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFDC2626),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: Colors.white, width: 1.5),
-                  ),
-                  child: Text(
-                    cantidad > 99 ? '99+' : cantidad.toString(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _TituloSeccion extends StatelessWidget {
   const _TituloSeccion({required this.titulo, this.accion});
 
@@ -1399,85 +1277,6 @@ class _StockRepartidorCard extends StatelessWidget {
                   ),
                 ),
               ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AlertaStockCard extends StatelessWidget {
-  const _AlertaStockCard({required this.producto});
-
-  final ProductoInventario producto;
-
-  @override
-  Widget build(BuildContext context) {
-    final sinStock = producto.stockActual == 0;
-    final estado = sinStock ? 'Sin stock' : 'Stock bajo';
-    final color = sinStock ? const Color(0xFFDC2626) : const Color(0xFFF97316);
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 0,
-      color: color.withValues(alpha: 0.04),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: color.withValues(alpha: 0.2)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CircleAvatar(
-              backgroundColor: color.withValues(alpha: 0.12),
-              foregroundColor: color,
-              child: Icon(
-                sinStock
-                    ? Icons.remove_shopping_cart_outlined
-                    : Icons.warning_amber,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    producto.nombre,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _InfoChip(
-                        icon: Icons.inventory_outlined,
-                        label: 'Actual: ${producto.stockActual}',
-                      ),
-                      _InfoChip(
-                        icon: Icons.warning_amber,
-                        label: 'Minimo: ${producto.stockMinimo}',
-                      ),
-                      Chip(
-                        label: Text(estado),
-                        labelStyle: TextStyle(
-                          color: color,
-                          fontWeight: FontWeight.w800,
-                        ),
-                        backgroundColor: color.withValues(alpha: 0.1),
-                        side: BorderSide(color: color.withValues(alpha: 0.2)),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
             ),
           ],
         ),

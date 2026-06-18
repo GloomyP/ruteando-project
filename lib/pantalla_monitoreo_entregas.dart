@@ -2,7 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'menu_drawer.dart';
 import 'persistencia_rutas.dart';
-import 'pantalla_perfil.dart';
+import 'widgets/campana_notificaciones_admin.dart';
+import 'widgets/menu_perfil_appbar.dart';
 
 String _formatearFechaEntrega(dynamic valor) {
   final texto = valor?.toString();
@@ -254,19 +255,7 @@ class _PantallaMonitoreoEntregasState extends State<PantallaMonitoreoEntregas> {
         title: const Text('Monitoreo de Entregas'),
         backgroundColor: Colors.green[800],
         foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            tooltip: 'Perfil',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (context) => const PantallaPerfil(),
-                ),
-              );
-            },
-            icon: const Icon(Icons.account_circle),
-          ),
-        ],
+        actions: [CampanaNotificacionesAdmin(), const MenuPerfilAppBar()],
       ),
       drawer: const AppMenuDrawer(currentRoute: '/monitoreo-entregas'),
       body: _cargandoInicial

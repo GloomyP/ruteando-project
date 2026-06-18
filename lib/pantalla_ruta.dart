@@ -8,9 +8,10 @@ import 'cierre_sesion.dart';
 import 'directions_service.dart'
     if (dart.library.js) 'directions_service_web.dart';
 import 'location_service.dart' if (dart.library.js) 'location_service_web.dart';
-import 'pantalla_perfil.dart';
 import 'roles.dart';
 import 'persistencia_rutas.dart';
+import 'widgets/campana_notificaciones_admin.dart';
+import 'widgets/menu_perfil_appbar.dart';
 
 typedef _ParadaRuta = ({int id, String texto});
 typedef _RutaCandidata = ({
@@ -617,19 +618,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
         title: const Text('Ruta Optimizada'),
         backgroundColor: Colors.green[800],
         foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            tooltip: 'Perfil',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (context) => const PantallaPerfil(),
-                ),
-              );
-            },
-            icon: const Icon(Icons.account_circle),
-          ),
-        ],
+        actions: [CampanaNotificacionesAdmin(), const MenuPerfilAppBar()],
       ),
       drawer: Drawer(
         child: SafeArea(
@@ -1159,7 +1148,19 @@ class _PantallaRutaState extends State<PantallaRuta> {
       _estado = 'Cargando conductores...';
     });
 
-    final conductores = await cargarConductoresVinculados();
+    final repartidores = await cargarRepartidoresAsignables();
+    final asignacionesActivas = await cargarAsignacionesGlobales();
+    final emailsOcupados = asignacionesActivas
+        .map(
+          (asignacion) =>
+              asignacion['repartidorEmail']?.toString().toLowerCase().trim(),
+        )
+        .whereType<String>()
+        .toSet();
+    final conductores = repartidores.where((repartidor) {
+      final email = repartidor['correo']?.toLowerCase().trim() ?? '';
+      return email.isNotEmpty && !emailsOcupados.contains(email);
+    }).toList();
 
     setState(() {
       _cargando = false;
@@ -1278,6 +1279,16 @@ class _PantallaRutaState extends State<PantallaRuta> {
   ) async {
     final email = conductor['correo'] ?? '';
     final nombre = conductor['nombre'] ?? '';
+
+    if (!esConductorRepartidor(conductor)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Solo puedes asignar rutas a usuarios repartidores.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
 
     if (email.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
