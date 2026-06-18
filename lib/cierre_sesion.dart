@@ -1,5 +1,17 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+Future<void> limpiarEstadoSesionActual({User? user}) async {
+  final usuario = user ?? FirebaseAuth.instance.currentUser;
+  final email = usuario?.email?.toLowerCase().trim();
+  if (email == null || email.isEmpty) {
+    return;
+  }
+
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.remove('notificacion_ruta_$email');
+}
 
 Future<void> confirmarYCerrarSesion(
   BuildContext context, {
@@ -30,6 +42,8 @@ Future<void> confirmarYCerrarSesion(
     return;
   }
 
+  final user = FirebaseAuth.instance.currentUser;
+  await limpiarEstadoSesionActual(user: user);
   await FirebaseAuth.instance.signOut();
 
   if (!context.mounted) {

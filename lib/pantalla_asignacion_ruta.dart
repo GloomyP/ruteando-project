@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'cierre_sesion.dart';
 import 'roles.dart';
 import 'persistencia_rutas.dart';
-import 'pantalla_perfil.dart';
+import 'widgets/campana_notificaciones_admin.dart';
+import 'widgets/menu_perfil_appbar.dart';
 
 String _formatearFechaEntrega(dynamic valor) {
   final texto = valor?.toString();
@@ -74,6 +75,123 @@ class _InfoPill extends StatelessWidget {
               style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RutaHistorialCard extends StatelessWidget {
+  const _RutaHistorialCard({required this.ruta});
+
+  final Map<String, dynamic> ruta;
+
+  @override
+  Widget build(BuildContext context) {
+    final nombre = ruta['repartidorNombre']?.toString() ?? 'Repartidor';
+    final email = ruta['repartidorEmail']?.toString() ?? '';
+    final origen = ruta['origen']?.toString() ?? 'Origen no registrado';
+    final paradas = ruta['paradas'] as List? ?? [];
+    final destino = paradas.isNotEmpty && paradas.last is Map
+        ? (paradas.last as Map)['texto']?.toString() ?? 'Destino no registrado'
+        : 'Destino no registrado';
+    final estadoFinal =
+        ruta['estadoFinal']?.toString() ??
+        ruta['estadoRecorrido']?.toString() ??
+        'Completado';
+    final fecha =
+        ruta['fechaCompletado'] ??
+        ruta['fechaAsignacion'] ??
+        ruta['fechaInicio'];
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: Colors.green.withValues(alpha: 0.12),
+                  foregroundColor: Colors.green[800],
+                  child: const Icon(Icons.route_outlined),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        nombre,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      if (email.isNotEmpty)
+                        Text(
+                          email,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                    ],
+                  ),
+                ),
+                Chip(
+                  label: Text(estadoFinal),
+                  visualDensity: VisualDensity.compact,
+                  backgroundColor: Colors.green.withValues(alpha: 0.12),
+                  labelStyle: TextStyle(
+                    color: Colors.green[800],
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _HistorialDato(
+              icon: Icons.event_outlined,
+              texto: 'Fecha: ${_formatearFechaEntrega(fecha)}',
+            ),
+            _HistorialDato(icon: Icons.trip_origin, texto: 'Origen: $origen'),
+            _HistorialDato(
+              icon: Icons.location_on_outlined,
+              texto: 'Destino: $destino',
+            ),
+            _HistorialDato(
+              icon: Icons.pin_drop_outlined,
+              texto: 'Paradas: ${paradas.length}',
+            ),
+            _HistorialDato(
+              icon: Icons.play_circle_outline,
+              texto: 'Inicio: ${_formatearFechaEntrega(ruta['fechaInicio'])}',
+            ),
+            _HistorialDato(
+              icon: Icons.flag_circle_outlined,
+              texto:
+                  'Termino: ${_formatearFechaEntrega(ruta['fechaCompletado'])}',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HistorialDato extends StatelessWidget {
+  const _HistorialDato({required this.icon, required this.texto});
+
+  final IconData icon;
+  final String texto;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: Colors.grey[700]),
+          const SizedBox(width: 8),
+          Expanded(child: Text(texto, style: const TextStyle(fontSize: 13))),
         ],
       ),
     );
@@ -268,10 +386,20 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
       if (email.isNotEmpty) {
         final rutaReal = await cargarRutaAsignada(email);
         if (rutaReal != null) {
+          if (_rutaEstaTerminada(rutaReal)) {
+            await registrarRutaTerminada(rutaReal);
+            await liberarRepartidorDeRutaActiva(email);
+            continue;
+          }
           // Usar la versión más reciente guardada por el conductor
           asignacionesActualizadas.add(rutaReal);
           continue;
         }
+      }
+      if (_rutaEstaTerminada(asignacion)) {
+        await registrarRutaTerminada(asignacion);
+        await liberarRepartidorDeRutaActiva(email);
+        continue;
       }
       asignacionesActualizadas.add(asignacion);
     }
@@ -280,6 +408,11 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
       _asignaciones = asignacionesActualizadas;
       _cargando = false;
     });
+  }
+
+  bool _rutaEstaTerminada(Map<String, dynamic> ruta) {
+    final estado = ruta['estadoRecorrido']?.toString();
+    return estado == 'Completado';
   }
 
   Future<void> _eliminarAsignacion(String email, String nombre) async {
@@ -330,6 +463,217 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
     );
   }
 
+  Future<void> _mostrarHistorialRutas() async {
+    final historial = await cargarHistorialRutasTerminadas();
+    historial.sort((a, b) {
+      final fechaA =
+          DateTime.tryParse(
+            a['fechaCompletado']?.toString() ??
+                a['fechaAsignacion']?.toString() ??
+                '',
+          ) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final fechaB =
+          DateTime.tryParse(
+            b['fechaCompletado']?.toString() ??
+                b['fechaAsignacion']?.toString() ??
+                '',
+          ) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      return fechaB.compareTo(fechaA);
+    });
+
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 24,
+          ),
+          title: const Text('Historial de rutas'),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 620, maxHeight: 560),
+            child: historial.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 18),
+                    child: Text('No hay rutas terminadas en el historial.'),
+                  )
+                : ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: historial.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
+                    itemBuilder: (context, index) {
+                      return _RutaHistorialCard(ruta: historial[index]);
+                    },
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _cambiarRepartidor(Map<String, dynamic> asignacion) async {
+    final emailActual = asignacion['repartidorEmail']?.toString() ?? '';
+    final nombreActual =
+        asignacion['repartidorNombre']?.toString() ?? 'Repartidor';
+    final repartidores = await cargarRepartidoresAsignables();
+    final emailsAsignados = _asignaciones
+        .map((a) => a['repartidorEmail']?.toString().toLowerCase().trim())
+        .whereType<String>()
+        .toSet();
+    final disponibles = repartidores.where((repartidor) {
+      final email = repartidor['correo']?.toLowerCase().trim() ?? '';
+      return email.isNotEmpty &&
+          email != emailActual.toLowerCase().trim() &&
+          !emailsAsignados.contains(email);
+    }).toList();
+
+    if (!mounted) return;
+
+    if (disponibles.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No hay otros repartidores disponibles.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    Map<String, String>? seleccionado = disponibles.first;
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Cambiar repartidor'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Ruta actual asignada a $nombreActual.'),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<Map<String, String>>(
+                    initialValue: seleccionado,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Nuevo repartidor',
+                      isDense: true,
+                    ),
+                    items: disponibles.map((repartidor) {
+                      return DropdownMenuItem<Map<String, String>>(
+                        value: repartidor,
+                        child: Text(
+                          '${repartidor['nombre']} (${repartidor['correo']})',
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setDialogState(() => seleccionado = value);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Se mantendran los datos de la ruta y solo cambiara el repartidor asignado.',
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: const Text('Confirmar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (confirmar != true || seleccionado == null) {
+      return;
+    }
+
+    if (!mounted) return;
+
+    if (!esConductorRepartidor(seleccionado!)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Solo puedes asignar rutas a usuarios repartidores.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final nuevoEmail = seleccionado!['correo']?.trim() ?? '';
+    final nuevoNombre = seleccionado!['nombre']?.trim() ?? '';
+    if (nuevoEmail.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('El repartidor seleccionado no tiene correo valido.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _cargando = true);
+
+    final nuevaAsignacion = Map<String, dynamic>.from(asignacion)
+      ..['repartidorEmail'] = nuevoEmail
+      ..['repartidorNombre'] = nuevoNombre;
+
+    await borrarRutaAsignada(emailActual);
+    await guardarRutaAsignada(nuevoEmail, nuevaAsignacion);
+    await guardarNotificacionRuta(nuevoEmail, {
+      'titulo': 'Nueva ruta asignada',
+      'mensaje': 'Tienes una ruta optimizada pendiente.',
+      'origen': nuevaAsignacion['origen'],
+      'paradas': (nuevaAsignacion['paradas'] as List?)?.length ?? 0,
+      'distancia': nuevaAsignacion['distancia'],
+      'tiempo': nuevaAsignacion['tiempo'],
+      'criterio': nuevaAsignacion['criterio'],
+      'rutaDestino': '/mi-ruta',
+      'leida': false,
+      'fechaCreacion': DateTime.now().toIso8601String(),
+    });
+
+    final asignaciones = await cargarAsignacionesGlobales();
+    asignaciones.removeWhere((a) {
+      final email = a['repartidorEmail']?.toString().toLowerCase().trim();
+      return email == emailActual.toLowerCase().trim() ||
+          email == nuevoEmail.toLowerCase().trim();
+    });
+    asignaciones.add(nuevaAsignacion);
+    await guardarAsignacionesGlobales(asignaciones);
+
+    await _cargarDatos();
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Ruta reasignada a $nuevoNombre.'),
+        backgroundColor: Colors.green,
+      ),
+    );
+  }
+
   void _abrirPantalla(BuildContext context, String ruta) async {
     Navigator.pop(context);
 
@@ -360,19 +704,7 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
         title: const Text('Asignación de Rutas'),
         backgroundColor: Colors.green[800],
         foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            tooltip: 'Perfil',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (context) => const PantallaPerfil(),
-                ),
-              );
-            },
-            icon: const Icon(Icons.account_circle),
-          ),
-        ],
+        actions: [CampanaNotificacionesAdmin(), const MenuPerfilAppBar()],
       ),
       drawer: Drawer(
         child: SafeArea(
@@ -477,18 +809,35 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
           ),
         ),
       ),
-      body: RefreshIndicator(
-        onRefresh: _cargarDatos,
-        child: Center(
-          child: _cargando
-              ? const CircularProgressIndicator()
-              : ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 600),
-                  child: _asignaciones.isEmpty
-                      ? _buildEmptyState()
-                      : _buildListaAsignaciones(),
-                ),
-        ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: OutlinedButton.icon(
+                onPressed: _mostrarHistorialRutas,
+                icon: const Icon(Icons.history),
+                label: const Text('Historial de rutas'),
+              ),
+            ),
+          ),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _cargarDatos,
+              child: Center(
+                child: _cargando
+                    ? const CircularProgressIndicator()
+                    : ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 600),
+                        child: _asignaciones.isEmpty
+                            ? _buildEmptyState()
+                            : _buildListaAsignaciones(),
+                      ),
+              ),
+            ),
+          ),
+        ],
       ),
       floatingActionButton: _asignaciones.isNotEmpty
           ? FloatingActionButton.extended(
@@ -607,6 +956,11 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
                           ),
                         ],
                       ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () => _cambiarRepartidor(asignacion),
+                      icon: const Icon(Icons.swap_horiz, size: 18),
+                      label: const Text('Cambiar repartidor'),
                     ),
                     IconButton(
                       tooltip: 'Eliminar asignación',
