@@ -1,4 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import '../models/movimiento_inventario.dart';
 import '../models/producto_inventario.dart';
 import '../models/stock_repartidor_inventario.dart';
@@ -6,7 +8,12 @@ import '../persistencia_rutas.dart';
 
 class InventarioService {
   InventarioService({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance;
+    : _firestore =
+          firestore ??
+          FirebaseFirestore.instanceFor(
+            app: Firebase.app(),
+            databaseId: 'ruteando',
+          );
 
   final FirebaseFirestore _firestore;
 
@@ -19,34 +26,79 @@ class InventarioService {
   CollectionReference<Map<String, dynamic>> get _movimientosRef =>
       _firestore.collection('inventario_movimientos');
 
-  Stream<List<ProductoInventario>> observarProductos() {
-    return _productosRef.orderBy('nombre').snapshots().map((snapshot) {
-      return snapshot.docs
-          .map(ProductoInventario.fromFirestore)
-          .toList(growable: false);
-    });
+  Stream<List<ProductoInventario>> observarProductos() async* {
+    yield const <ProductoInventario>[];
+
+    if (kIsWeb) {
+      return;
+    }
+
+    try {
+      yield* _productosRef
+          .orderBy('nombre')
+          .snapshots()
+          .map((snapshot) {
+            return snapshot.docs
+                .map(ProductoInventario.fromFirestore)
+                .toList(growable: false);
+          })
+          .handleError((Object error, StackTrace stackTrace) {
+            debugPrint('Error observando productos de inventario: $error');
+          });
+    } catch (error) {
+      debugPrint('Error inicializando inventario de productos: $error');
+    }
   }
 
-  Stream<List<StockRepartidorInventario>> observarStockRepartidores() {
-    return _stockRepartidoresRef.orderBy('nombre').snapshots().map((snapshot) {
-      return snapshot.docs
-          .map(StockRepartidorInventario.fromFirestore)
-          .toList(growable: false);
-    });
+  Stream<List<StockRepartidorInventario>> observarStockRepartidores() async* {
+    yield const <StockRepartidorInventario>[];
+
+    if (kIsWeb) {
+      return;
+    }
+
+    try {
+      yield* _stockRepartidoresRef
+          .orderBy('nombre')
+          .snapshots()
+          .map((snapshot) {
+            return snapshot.docs
+                .map(StockRepartidorInventario.fromFirestore)
+                .toList(growable: false);
+          })
+          .handleError((Object error, StackTrace stackTrace) {
+            debugPrint('Error observando stock por repartidor: $error');
+          });
+    } catch (error) {
+      debugPrint('Error inicializando stock por repartidor: $error');
+    }
   }
 
   Stream<List<MovimientoInventario>> obtenerUltimosMovimientos({
     int limite = 8,
-  }) {
-    return _movimientosRef
-        .orderBy('fecha', descending: true)
-        .limit(limite)
-        .snapshots()
-        .map((snapshot) {
-          return snapshot.docs
-              .map(MovimientoInventario.fromFirestore)
-              .toList(growable: false);
-        });
+  }) async* {
+    yield const <MovimientoInventario>[];
+
+    if (kIsWeb) {
+      return;
+    }
+
+    try {
+      yield* _movimientosRef
+          .orderBy('fecha', descending: true)
+          .limit(limite)
+          .snapshots()
+          .map((snapshot) {
+            return snapshot.docs
+                .map(MovimientoInventario.fromFirestore)
+                .toList(growable: false);
+          })
+          .handleError((Object error, StackTrace stackTrace) {
+            debugPrint('Error observando movimientos de inventario: $error');
+          });
+    } catch (error) {
+      debugPrint('Error inicializando movimientos de inventario: $error');
+    }
   }
 
   Stream<List<MovimientoInventario>> observarUltimosMovimientos({

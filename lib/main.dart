@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
@@ -28,6 +29,22 @@ import 'directions_service.dart'
 
 String _empresaUsuarioKey() => empresaUsuarioKey();
 
+Future<Map<String, String>?> _cargarEmpresaLocal() async {
+  final prefs = await SharedPreferences.getInstance();
+  final data = prefs.getString(_empresaUsuarioKey());
+
+  if (data == null) {
+    return null;
+  }
+
+  final decoded = jsonDecode(data);
+  if (decoded is! Map<String, dynamic>) {
+    return null;
+  }
+
+  return decoded.map((key, value) => MapEntry(key, value.toString()));
+}
+
 class _EstadoSesion {
   const _EstadoSesion({
     required this.rol,
@@ -41,21 +58,32 @@ class _EstadoSesion {
 }
 
 Future<_EstadoSesion> _cargarEstadoSesion(User user) async {
-  final resultadosIniciales = await Future.wait<Object>([
-    usuarioDeshabilitado(user: user),
-    cargarRolUsuario(user: user),
-  ]);
-  final deshabilitado = resultadosIniciales[0] as bool;
-  final rol = resultadosIniciales[1] as RolUsuario;
-  final requiereCambio = rol == RolUsuario.repartidor
-      ? await debeCambiarContrasena(user: user)
-      : false;
+  try {
+    final resultadosIniciales = await Future.wait<Object>([
+      usuarioDeshabilitado(user: user),
+      cargarRolUsuario(user: user),
+    ]).timeout(const Duration(seconds: 8));
+    final deshabilitado = resultadosIniciales[0] as bool;
+    final rol = resultadosIniciales[1] as RolUsuario;
+    final requiereCambio = rol == RolUsuario.repartidor
+        ? await debeCambiarContrasena(
+            user: user,
+          ).timeout(const Duration(seconds: 6), onTimeout: () => false)
+        : false;
 
-  return _EstadoSesion(
-    rol: rol,
-    debeCambiarContrasena: requiereCambio,
-    cuentaDeshabilitada: deshabilitado,
-  );
+    return _EstadoSesion(
+      rol: rol,
+      debeCambiarContrasena: requiereCambio,
+      cuentaDeshabilitada: deshabilitado,
+    );
+  } catch (error) {
+    debugPrint('Error preparando estado de sesion: $error');
+    return const _EstadoSesion(
+      rol: RolUsuario.admin,
+      debeCambiarContrasena: false,
+      cuentaDeshabilitada: false,
+    );
+  }
 }
 
 // Inicializamos la instancia conectada a tu base de datos específica "ruteando"
@@ -65,6 +93,15 @@ final FirebaseFirestore _firestore = FirebaseFirestore.instanceFor(
 );
 
 Future<Map<String, String>?> _cargarEmpresaVinculada() async {
+  final empresaLocal = await _cargarEmpresaLocal();
+  if (empresaLocal != null) {
+    return empresaLocal;
+  }
+
+  if (kIsWeb) {
+    return null;
+  }
+
   try {
     final user = FirebaseAuth.instance.currentUser;
     final identificador = user?.email?.toLowerCase().trim() ?? user?.uid;
@@ -88,24 +125,13 @@ Future<Map<String, String>?> _cargarEmpresaVinculada() async {
         return empresa;
       }
     }
-  } catch (_) {
+  } catch (error) {
+    debugPrint('Error al cargar la empresa desde Firestore: $error');
     // Si no hay red o falla Firestore, el flujo cae al respaldo de SharedPreferences
   }
 
   // 2. Respaldo local tradicional con SharedPreferences
-  final prefs = await SharedPreferences.getInstance();
-  final data = prefs.getString(_empresaUsuarioKey());
-
-  if (data == null) {
-    return null;
-  }
-
-  final decoded = jsonDecode(data);
-  if (decoded is! Map<String, dynamic>) {
-    return null;
-  }
-
-  return decoded.map((key, value) => MapEntry(key, value.toString()));
+  return _cargarEmpresaLocal();
 }
 
 Future<void> _guardarEmpresaVinculada(Map<String, String> empresa) async {
@@ -176,6 +202,11 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Inicializamos Firebase al arrancar la app
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  if (kIsWeb) {
+    final auth = FirebaseAuth.instance;
+    await auth.setPersistence(Persistence.NONE);
+    await auth.signOut();
+  }
   await appSettingsService.cargar();
   runApp(const RuteandoApp());
 }
@@ -3188,12 +3219,17 @@ class _PantallaLoginState extends State<PantallaLogin> {
 
     try {
       // Conexión real con Firebase
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
+      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: _email,
         password: _password,
       );
-      final deshabilitado = await usuarioDeshabilitado();
-      if (deshabilitado) {
+      final user = credential.user ?? FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        throw StateError('No se pudo obtener la sesion del usuario.');
+      }
+
+      final estado = await _cargarEstadoSesion(user);
+      if (estado.cuentaDeshabilitada) {
         await limpiarEstadoSesionActual();
         await FirebaseAuth.instance.signOut();
         if (!mounted) {
@@ -3208,10 +3244,41 @@ class _PantallaLoginState extends State<PantallaLogin> {
         return;
       }
       // No necesitamos hacer Navigator.push, el StreamBuilder de main() detectará el cambio y mostrará el Dashboard.
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+      if (!mounted) {
+        return;
+      }
+
+      if (estado.rol == RolUsuario.repartidor) {
+        if (estado.debeCambiarContrasena) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute<void>(
+              builder: (_) => const PantallaCambioContrasenaObligatorio(),
+            ),
+            (route) => false,
+          );
+        } else {
+          Navigator.of(
+            context,
+          ).pushNamedAndRemoveUntil('/mi-ruta', (route) => false);
+        }
+        return;
+      }
+
+      Navigator.of(
+        context,
+      ).pushNamedAndRemoveUntil('/inicio', (route) => false);
     } on FirebaseAuthException catch (e) {
       setState(() {
         _isLoading = false;
         _errorMessage = 'Error: ${e.message}';
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'No se pudo iniciar sesion: $e';
       });
     }
   }
