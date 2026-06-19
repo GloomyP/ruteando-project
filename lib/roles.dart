@@ -27,7 +27,7 @@ enum RolUsuario {
 
 // Conectamos a tu base de datos específica "ruteando"
 FirebaseFirestore get _firestore =>
-    FirebaseFirestore.instanceFor(app: Firebase.app(), databaseId: 'ruteando');
+    FirebaseFirestore.instanceFor(app: Firebase.app());
 
 String usuarioRolKey({User? user}) {
   User? usuario;
@@ -50,10 +50,6 @@ String usuarioRolKey({User? user}) {
 Future<RolUsuario> cargarRolUsuario({User? user}) async {
   final identificador = usuarioRolKey(user: user);
   final prefs = await SharedPreferences.getInstance();
-
-  if (kIsWeb) {
-    return RolUsuario.desdeValor(prefs.getString('rol_usuario_$identificador'));
-  }
 
   if (identificador != 'local') {
     try {
@@ -126,7 +122,7 @@ Future<void> guardarRolUsuarioPorEmail(String email, RolUsuario rol) async {
 Future<bool> debeCambiarContrasena({User? user}) async {
   final identificador = usuarioRolKey(user: user);
 
-  if (identificador == 'local' || kIsWeb) {
+  if (identificador == 'local') {
     return false;
   }
 
@@ -146,7 +142,7 @@ Future<bool> debeCambiarContrasena({User? user}) async {
 Future<bool> usuarioDeshabilitado({User? user}) async {
   final identificador = usuarioRolKey(user: user);
 
-  if (identificador == 'local' || kIsWeb) {
+  if (identificador == 'local') {
     return false;
   }
 

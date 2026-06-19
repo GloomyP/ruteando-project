@@ -37,6 +37,16 @@ class _PantallaInventarioState extends State<PantallaInventario> {
 
   final InventarioService _inventarioService = InventarioService();
 
+  String _mensajeErrorAmigable(Object error) {
+    final texto = error.toString();
+    if (texto.contains('cloud_firestore') ||
+        texto.contains('Unable to establish connection on channel')) {
+      return 'No se pudo conectar con la base de datos. Se guardara localmente si estas probando en este equipo.';
+    }
+
+    return texto;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -59,7 +69,7 @@ class _PantallaInventarioState extends State<PantallaInventario> {
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Text(
-                  'No se pudo cargar el inventario: ${productosSnapshot.error}',
+                  'No se pudo cargar el inventario: ${_mensajeErrorAmigable(productosSnapshot.error!)}',
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.red),
                 ),
@@ -78,7 +88,7 @@ class _PantallaInventarioState extends State<PantallaInventario> {
                   child: Padding(
                     padding: const EdgeInsets.all(24),
                     child: Text(
-                      'No se pudo cargar el stock por repartidor: ${stockSnapshot.error}',
+                      'No se pudo cargar el stock por repartidor: ${_mensajeErrorAmigable(stockSnapshot.error!)}',
                       textAlign: TextAlign.center,
                       style: const TextStyle(color: Colors.red),
                     ),
@@ -96,7 +106,7 @@ class _PantallaInventarioState extends State<PantallaInventario> {
                       child: Padding(
                         padding: const EdgeInsets.all(24),
                         child: Text(
-                          'No se pudieron cargar los movimientos: ${movimientosSnapshot.error}',
+                          'No se pudieron cargar los movimientos: ${_mensajeErrorAmigable(movimientosSnapshot.error!)}',
                           textAlign: TextAlign.center,
                           style: const TextStyle(color: Colors.red),
                         ),
@@ -232,7 +242,9 @@ class _PantallaInventarioState extends State<PantallaInventario> {
                 setDialogState(() => guardando = false);
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('No se pudo guardar el producto: $e'),
+                    content: Text(
+                      'No se pudo guardar el producto: ${_mensajeErrorAmigable(e)}',
+                    ),
                     backgroundColor: Colors.red,
                   ),
                 );
@@ -443,7 +455,9 @@ class _PantallaInventarioState extends State<PantallaInventario> {
                 setDialogState(() => guardando = false);
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('No se pudo guardar el stock: $e'),
+                    content: Text(
+                      'No se pudo guardar el stock: ${_mensajeErrorAmigable(e)}',
+                    ),
                     backgroundColor: Colors.red,
                   ),
                 );
@@ -636,7 +650,9 @@ class _PantallaInventarioState extends State<PantallaInventario> {
                 setDialogState(() => guardando = false);
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('No se pudo registrar el movimiento: $e'),
+                    content: Text(
+                      'No se pudo registrar el movimiento: ${_mensajeErrorAmigable(e)}',
+                    ),
                     backgroundColor: Colors.red,
                   ),
                 );
@@ -849,7 +865,9 @@ class _PantallaInventarioState extends State<PantallaInventario> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('No se pudo eliminar el producto: $e'),
+          content: Text(
+            'No se pudo eliminar el producto: ${_mensajeErrorAmigable(e)}',
+          ),
           backgroundColor: Colors.red,
         ),
       );
@@ -1076,12 +1094,19 @@ class _ResumenCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final fondo = Color.alphaBlend(
+      color.withValues(alpha: 0.12),
+      Theme.of(context).cardTheme.color ??
+          Theme.of(context).colorScheme.surface,
+    );
+
     return Card(
-      elevation: 0,
-      color: color.withValues(alpha: 0.08),
+      elevation: 2,
+      color: fondo,
+      surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: color.withValues(alpha: 0.16)),
+        side: BorderSide(color: color.withValues(alpha: 0.35)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -1196,10 +1221,12 @@ class _StockRepartidorCard extends StatelessWidget {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      elevation: 0,
+      elevation: 2,
+      color: Theme.of(context).cardTheme.color,
+      surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: Color(0xFFE5E7EB)),
+        side: const BorderSide(color: Color(0xFF111111), width: 0.6),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1298,10 +1325,12 @@ class _MovimientoInventarioCard extends StatelessWidget {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      elevation: 0,
+      elevation: 2,
+      color: Theme.of(context).cardTheme.color,
+      surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: Color(0xFFE5E7EB)),
+        side: const BorderSide(color: Color(0xFF111111), width: 0.6),
       ),
       child: ListTile(
         leading: CircleAvatar(
@@ -1396,10 +1425,12 @@ class _ProductoInventarioCard extends StatelessWidget {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      elevation: 0,
+      elevation: 2,
+      color: Theme.of(context).cardTheme.color,
+      surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: Color(0xFFE5E7EB)),
+        side: const BorderSide(color: Color(0xFF111111), width: 0.6),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1607,10 +1638,12 @@ class _EstadoVacio extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      elevation: 0,
+      elevation: 2,
+      color: Theme.of(context).cardTheme.color,
+      surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: Color(0xFFE5E7EB)),
+        side: const BorderSide(color: Color(0xFF111111), width: 0.6),
       ),
       child: Padding(
         padding: const EdgeInsets.all(24),

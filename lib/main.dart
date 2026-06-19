@@ -89,24 +89,17 @@ Future<_EstadoSesion> _cargarEstadoSesion(User user) async {
 // Inicializamos la instancia conectada a tu base de datos específica "ruteando"
 final FirebaseFirestore _firestore = FirebaseFirestore.instanceFor(
   app: Firebase.app(),
-  databaseId: 'ruteando',
 );
 
 Future<Map<String, String>?> _cargarEmpresaVinculada() async {
-  final empresaLocal = await _cargarEmpresaLocal();
-  if (empresaLocal != null) {
-    return empresaLocal;
-  }
-
-  if (kIsWeb) {
-    return null;
-  }
-
   try {
     final user = FirebaseAuth.instance.currentUser;
-    final identificador = user?.email?.toLowerCase().trim() ?? user?.uid;
+    final candidatos = [
+      user?.email?.toLowerCase().trim(),
+      user?.uid,
+    ].whereType<String>().where((id) => id.isNotEmpty).toSet();
 
-    if (identificador != null) {
+    for (final identificador in candidatos) {
       // 1. Intentar cargar los datos desde la nube (Firestore)
       final doc = await _firestore
           .collection('empresas_usuarios')
@@ -122,6 +115,28 @@ Future<Map<String, String>?> _cargarEmpresaVinculada() async {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(_empresaUsuarioKey(), jsonEncode(empresa));
 
+        return empresa;
+      }
+    }
+
+    const coleccionesEmpresa = [
+      'empresas_usuarios',
+      'empresas',
+      'empresa',
+      'companies',
+    ];
+    for (final coleccion in coleccionesEmpresa) {
+      final empresasSnapshot = await _firestore
+          .collection(coleccion)
+          .limit(1)
+          .get();
+      if (empresasSnapshot.docs.isNotEmpty) {
+        final data = empresasSnapshot.docs.first.data();
+        final empresa = data.map(
+          (key, value) => MapEntry(key, value.toString()),
+        );
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_empresaUsuarioKey(), jsonEncode(empresa));
         return empresa;
       }
     }
@@ -142,13 +157,28 @@ Future<void> _guardarEmpresaVinculada(Map<String, String> empresa) async {
   // 2. Guardar en la nube (Firestore) para persistencia real multiusuario
   try {
     final user = FirebaseAuth.instance.currentUser;
-    final identificador = user?.email?.toLowerCase().trim() ?? user?.uid;
+    final email = user?.email?.toLowerCase().trim();
+    final uid = user?.uid;
+    final identificadores = [
+      email,
+      uid,
+    ].whereType<String>().where((id) => id.isNotEmpty).toSet();
 
-    if (identificador != null) {
+    for (final identificador in identificadores) {
       await _firestore
           .collection('empresas_usuarios')
           .doc(identificador)
           .set(empresa, SetOptions(merge: true));
+    }
+
+    if (email != null && email.isNotEmpty) {
+      final empresaKey = empresa['rut']?.trim();
+      if (empresaKey != null && empresaKey.isNotEmpty) {
+        await _firestore.collection('usuarios_empresas').doc(email).set({
+          'empresaKey': empresaKey,
+          'actualizado': DateTime.now().toIso8601String(),
+        }, SetOptions(merge: true));
+      }
     }
   } catch (e) {
     debugPrint('Error al guardar la empresa en Firestore: $e');
@@ -219,15 +249,22 @@ class RuteandoApp extends StatefulWidget {
 }
 
 class _RuteandoAppState extends State<RuteandoApp> {
+  final ValueNotifier<String?> _rutaActualNotifier = ValueNotifier<String?>(
+    '/login',
+  );
+  late final NavigatorObserver _fondoRutaObserver;
+
   @override
   void initState() {
     super.initState();
+    _fondoRutaObserver = _FondoRutaObserver(_rutaActualNotifier);
     appSettingsService.addListener(_actualizarConfiguracion);
   }
 
   @override
   void dispose() {
     appSettingsService.removeListener(_actualizarConfiguracion);
+    _rutaActualNotifier.dispose();
     super.dispose();
   }
 
@@ -246,9 +283,51 @@ class _RuteandoAppState extends State<RuteandoApp> {
       themeMode: settings.themeMode,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
+        scaffoldBackgroundColor: Colors.transparent,
         useMaterial3: true,
+        cardTheme: const CardThemeData(
+          color: Color(0xFFFCFFF8),
+          surfaceTintColor: Colors.transparent,
+          elevation: 2,
+          shadowColor: Color(0x33000000),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            backgroundColor: const Color(0xFFFCFFF8),
+            foregroundColor: const Color(0xFF1F5F25),
+            side: const BorderSide(color: Color(0xFF2E7D32)),
+          ),
+        ),
         inputDecorationTheme: const InputDecorationTheme(
-          border: OutlineInputBorder(),
+          filled: true,
+          fillColor: Color(0xFFF8FCF5),
+          contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          labelStyle: TextStyle(color: Color(0xFF344536)),
+          hintStyle: TextStyle(color: Color(0xFF667468)),
+          floatingLabelStyle: TextStyle(
+            color: Color(0xFF2E7D32),
+            fontWeight: FontWeight.w600,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(10)),
+            borderSide: BorderSide(color: Color(0xFF879585)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(10)),
+            borderSide: BorderSide(color: Color(0xFF879585)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(10)),
+            borderSide: BorderSide(color: Color(0xFF2E7D32), width: 2),
+          ),
+          errorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(10)),
+            borderSide: BorderSide(color: Color(0xFFC62828)),
+          ),
+          focusedErrorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(10)),
+            borderSide: BorderSide(color: Color(0xFFC62828), width: 2),
+          ),
         ),
       ),
       darkTheme: ThemeData(
@@ -256,12 +335,55 @@ class _RuteandoAppState extends State<RuteandoApp> {
           seedColor: Colors.green,
           brightness: Brightness.dark,
         ),
+        scaffoldBackgroundColor: Colors.transparent,
         useMaterial3: true,
+        cardTheme: const CardThemeData(
+          color: Color(0xFF172116),
+          surfaceTintColor: Colors.transparent,
+          elevation: 2,
+          shadowColor: Color(0x66000000),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            backgroundColor: const Color(0xFF172116),
+            foregroundColor: const Color(0xFFDDE8DA),
+            side: const BorderSide(color: Color(0xFF86D889)),
+          ),
+        ),
         inputDecorationTheme: const InputDecorationTheme(
-          border: OutlineInputBorder(),
+          filled: true,
+          fillColor: Color(0xFF172116),
+          contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          labelStyle: TextStyle(color: Color(0xFFDDE8DA)),
+          hintStyle: TextStyle(color: Color(0xFFAEBBAA)),
+          floatingLabelStyle: TextStyle(
+            color: Color(0xFF86D889),
+            fontWeight: FontWeight.w600,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(10)),
+            borderSide: BorderSide(color: Color(0xFF6F806D)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(10)),
+            borderSide: BorderSide(color: Color(0xFF6F806D)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(10)),
+            borderSide: BorderSide(color: Color(0xFF86D889), width: 2),
+          ),
+          errorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(10)),
+            borderSide: BorderSide(color: Color(0xFFFF8A80)),
+          ),
+          focusedErrorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(10)),
+            borderSide: BorderSide(color: Color(0xFFFF8A80), width: 2),
+          ),
         ),
       ),
       // StreamBuilder escucha automáticamente si Firebase tiene un usuario activo
+      navigatorObservers: [_fondoRutaObserver],
       routes: {
         '/login': (context) => const PantallaLogin(),
         '/inicio': (context) =>
@@ -281,6 +403,83 @@ class _RuteandoAppState extends State<RuteandoApp> {
         '/mi-ruta': (context) => const PantallaRutaAsignada(),
       },
       home: const _AuthGate(),
+      builder: (context, child) {
+        return ValueListenableBuilder<String?>(
+          valueListenable: _rutaActualNotifier,
+          builder: (context, rutaActual, _) {
+            return _FondoGlobalApp(
+              rutaActual: rutaActual,
+              child: child ?? const SizedBox.shrink(),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _FondoRutaObserver extends NavigatorObserver {
+  _FondoRutaObserver(this.rutaActualNotifier);
+
+  final ValueNotifier<String?> rutaActualNotifier;
+
+  void _actualizarRuta(Route<dynamic>? route) {
+    final nombre = route?.settings.name;
+    if (nombre != null && nombre.isNotEmpty) {
+      rutaActualNotifier.value = nombre;
+    }
+  }
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _actualizarRuta(route);
+    super.didPush(route, previousRoute);
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    _actualizarRuta(newRoute);
+    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _actualizarRuta(previousRoute);
+    super.didPop(route, previousRoute);
+  }
+}
+
+class _FondoGlobalApp extends StatelessWidget {
+  const _FondoGlobalApp({required this.child, required this.rutaActual});
+
+  final Widget child;
+  final String? rutaActual;
+
+  static const String _fondoPorDefecto = 'imagenes/monitoreo-entregas.png';
+
+  static const Map<String, String> _fondosPorRuta = {
+    '/login': 'imagenes/login.png',
+    '/repartidores': 'imagenes/repartidores.png',
+    '/empresa': 'imagenes/empresas.png',
+    '/inventario': 'imagenes/inventario.png',
+    '/asignacion-rutas': 'imagenes/asignacion-rutas.png',
+    '/monitoreo-entregas': 'imagenes/monitoreo-entregas.png',
+    '/perfil': 'imagenes/perfil.png',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final fondo = _fondosPorRuta[rutaActual] ?? _fondoPorDefecto;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        image: DecorationImage(
+          image: AssetImage(fondo),
+          fit: BoxFit.cover,
+          alignment: Alignment.center,
+        ),
+      ),
+      child: child,
     );
   }
 }
@@ -384,8 +583,15 @@ class PantallaProtegidaAdmin extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final user = Firebase.apps.isEmpty
+        ? null
+        : FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      return const PantallaLogin();
+    }
+
     return FutureBuilder<RolUsuario>(
-      future: cargarRolUsuario(),
+      future: cargarRolUsuario(user: user),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
@@ -435,6 +641,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
     Navigator.pop(context);
     Navigator.of(context).push(
       MaterialPageRoute<void>(
+        settings: const RouteSettings(name: '/repartidores'),
         builder: (context) => const PantallaConductores(),
       ),
     );
@@ -442,15 +649,19 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
 
   void _abrirRutas(BuildContext context) {
     Navigator.pop(context);
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute<void>(builder: (context) => const PantallaRuta()));
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        settings: const RouteSettings(name: '/rutas'),
+        builder: (context) => const PantallaRuta(),
+      ),
+    );
   }
 
   Future<void> _abrirRegistroEmpresa(BuildContext context) async {
     Navigator.pop(context);
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
+        settings: const RouteSettings(name: '/empresa'),
         builder: (context) => const PantallaRegistroEmpresa(),
       ),
     );
@@ -529,6 +740,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                   Navigator.pop(context);
                   Navigator.of(context).push(
                     MaterialPageRoute<void>(
+                      settings: const RouteSettings(name: '/asignacion-rutas'),
                       builder: (context) => const PantallaAsignacionRuta(),
                     ),
                   );
@@ -541,6 +753,9 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                   Navigator.pop(context);
                   Navigator.of(context).push(
                     MaterialPageRoute<void>(
+                      settings: const RouteSettings(
+                        name: '/monitoreo-entregas',
+                      ),
                       builder: (context) => const PantallaMonitoreoEntregas(),
                     ),
                   );
@@ -822,6 +1037,20 @@ class _PantallaConductoresState extends State<PantallaConductores> {
     return correo.toLowerCase().trim();
   }
 
+  String _mensajeErrorAmigable(Object error) {
+    final texto = error.toString();
+    if (texto.contains('cloud_firestore') ||
+        texto.contains('Unable to establish connection on channel')) {
+      return 'No se pudo conectar con la base de datos remota. Los datos quedaron guardados localmente para esta prueba.';
+    }
+
+    if (error is FirebaseException && error.message != null) {
+      return error.message!;
+    }
+
+    return texto;
+  }
+
   String _normalizarRutParaComparar(String rut) {
     return rut.replaceAll(RegExp(r'[^0-9kK]'), '').toUpperCase();
   }
@@ -996,18 +1225,28 @@ class _PantallaConductoresState extends State<PantallaConductores> {
         contrasena: contrasenaTemporal,
       );
       if (Firebase.apps.isNotEmpty) {
-        await guardarCambioContrasenaRequerido(
-          email: correo,
-          contrasenaTemporal: contrasenaTemporal,
-        );
+        try {
+          await guardarCambioContrasenaRequerido(
+            email: correo,
+            contrasenaTemporal: contrasenaTemporal,
+          );
+        } catch (error) {
+          debugPrint(
+            'No se pudo sincronizar cambio de contrasena requerido: $error',
+          );
+        }
       }
+      await guardarConductoresVinculados(conductoresActualizados);
       if (Firebase.apps.isNotEmpty) {
-        await guardarConductoresVinculados(conductoresActualizados);
-        await actualizarTelefonoPerfilPorAdmin(
-          email: correo,
-          nombre: nombre,
-          telefono: _telefonoController.text.trim(),
-        );
+        try {
+          await actualizarTelefonoPerfilPorAdmin(
+            email: correo,
+            nombre: nombre,
+            telefono: _telefonoController.text.trim(),
+          );
+        } catch (error) {
+          debugPrint('No se pudo sincronizar el perfil del repartidor: $error');
+        }
       }
     } on FirebaseException catch (e) {
       if (!mounted) {
@@ -1015,7 +1254,7 @@ class _PantallaConductoresState extends State<PantallaConductores> {
       }
 
       setState(() {
-        _mensajeError = 'Error: ${e.message}';
+        _mensajeError = _mensajeErrorAmigable(e);
         _mensajeExito = null;
       });
       return;

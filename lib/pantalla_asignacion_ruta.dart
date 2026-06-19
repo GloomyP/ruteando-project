@@ -48,12 +48,18 @@ class _InfoPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final fondo = Color.alphaBlend(
+      color.withValues(alpha: 0.1),
+      Theme.of(context).cardTheme.color ??
+          Theme.of(context).colorScheme.surface,
+    );
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
+        color: fondo,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withValues(alpha: 0.12)),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -299,10 +305,16 @@ class _EstadoChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final fondo = Color.alphaBlend(
+      color.withValues(alpha: 0.12),
+      Theme.of(context).cardTheme.color ??
+          Theme.of(context).colorScheme.surface,
+    );
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
+        color: fondo,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
