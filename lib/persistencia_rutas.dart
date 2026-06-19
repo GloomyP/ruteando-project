@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 final FirebaseFirestore _firestore = FirebaseFirestore.instanceFor(
@@ -95,6 +96,10 @@ String _notificacionesInternasLocalKey() {
 // RUTAS ASIGNADAS INDIVIDUALES (REPARTIDOR)
 // ==========================================
 Future<Map<String, dynamic>?> cargarRutaAsignada(String email) async {
+  if (kIsWeb) {
+    return _cargarRutaAsignadaLocal(email);
+  }
+
   try {
     final doc = await _firestore
         .collection('rutas_asignadas')
@@ -108,6 +113,10 @@ Future<Map<String, dynamic>?> cargarRutaAsignada(String email) async {
     }
   } catch (_) {}
 
+  return _cargarRutaAsignadaLocal(email);
+}
+
+Future<Map<String, dynamic>?> _cargarRutaAsignadaLocal(String email) async {
   final prefs = await SharedPreferences.getInstance();
   final data = prefs.getString(_rutaAsignadaLocalKey(email));
   if (data == null) {
@@ -123,7 +132,7 @@ Future<Map<String, dynamic>?> cargarRutaAsignada(String email) async {
 }
 
 Stream<Map<String, dynamic>?> escucharRutaAsignada(String email) {
-  if (Firebase.apps.isEmpty) {
+  if (Firebase.apps.isEmpty || kIsWeb) {
     return Stream.fromFuture(cargarRutaAsignada(email));
   }
 
@@ -235,7 +244,30 @@ Future<void> marcarNotificacionRutaLeida(String email) async {
 // ==========================================
 // NOTIFICACIONES INTERNAS (ADMINISTRADOR)
 // ==========================================
+Future<List<Map<String, dynamic>>>
+_cargarNotificacionesInternasLocales() async {
+  final prefs = await SharedPreferences.getInstance();
+  final data = prefs.getString(_notificacionesInternasLocalKey());
+  if (data == null) {
+    return [];
+  }
+
+  final decoded = jsonDecode(data);
+  if (decoded is List) {
+    return decoded
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  return [];
+}
+
 Future<List<Map<String, dynamic>>> cargarNotificacionesInternas() async {
+  if (Firebase.apps.isEmpty || kIsWeb) {
+    return _cargarNotificacionesInternasLocales();
+  }
+
   try {
     final key = await empresaOperativaKey();
     final doc = await _firestore
@@ -257,25 +289,11 @@ Future<List<Map<String, dynamic>>> cargarNotificacionesInternas() async {
     }
   } catch (_) {}
 
-  final prefs = await SharedPreferences.getInstance();
-  final data = prefs.getString(_notificacionesInternasLocalKey());
-  if (data == null) {
-    return [];
-  }
-
-  final decoded = jsonDecode(data);
-  if (decoded is List) {
-    return decoded
-        .whereType<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
-        .toList();
-  }
-
-  return [];
+  return _cargarNotificacionesInternasLocales();
 }
 
 Stream<List<Map<String, dynamic>>> escucharNotificacionesInternas() {
-  if (Firebase.apps.isEmpty) {
+  if (Firebase.apps.isEmpty || kIsWeb) {
     return Stream.fromFuture(cargarNotificacionesInternas());
   }
 
@@ -312,7 +330,7 @@ Future<void> guardarNotificacionesInternas(
     jsonEncode(notificaciones),
   );
 
-  if (Firebase.apps.isEmpty) {
+  if (Firebase.apps.isEmpty || kIsWeb) {
     return;
   }
 

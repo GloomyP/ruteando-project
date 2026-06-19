@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+const _firestoreLecturaTimeout = Duration(seconds: 6);
 
 enum RolUsuario {
   admin('admin', 'Administrador de empresa'),
@@ -45,6 +49,11 @@ String usuarioRolKey({User? user}) {
 
 Future<RolUsuario> cargarRolUsuario({User? user}) async {
   final identificador = usuarioRolKey(user: user);
+  final prefs = await SharedPreferences.getInstance();
+
+  if (kIsWeb) {
+    return RolUsuario.desdeValor(prefs.getString('rol_usuario_$identificador'));
+  }
 
   if (identificador != 'local') {
     try {
@@ -52,7 +61,8 @@ Future<RolUsuario> cargarRolUsuario({User? user}) async {
       final doc = await _firestore
           .collection('roles_usuarios')
           .doc(identificador)
-          .get();
+          .get()
+          .timeout(_firestoreLecturaTimeout);
       if (doc.exists && doc.data() != null) {
         final rolString = doc.data()!['rol'] as String?;
         final rol = RolUsuario.desdeValor(rolString);
@@ -63,13 +73,13 @@ Future<RolUsuario> cargarRolUsuario({User? user}) async {
 
         return rol;
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Error cargando rol desde Firestore: $e');
       // Si falla la red, ignoramos el error y tratamos de cargar localmente
     }
   }
 
   // 2. Si no está en la nube o no hay internet, cargamos el caché local
-  final prefs = await SharedPreferences.getInstance();
   return RolUsuario.desdeValor(prefs.getString('rol_usuario_$identificador'));
 }
 
@@ -116,7 +126,7 @@ Future<void> guardarRolUsuarioPorEmail(String email, RolUsuario rol) async {
 Future<bool> debeCambiarContrasena({User? user}) async {
   final identificador = usuarioRolKey(user: user);
 
-  if (identificador == 'local') {
+  if (identificador == 'local' || kIsWeb) {
     return false;
   }
 
@@ -124,9 +134,11 @@ Future<bool> debeCambiarContrasena({User? user}) async {
     final doc = await _firestore
         .collection('roles_usuarios')
         .doc(identificador)
-        .get();
+        .get()
+        .timeout(_firestoreLecturaTimeout);
     return doc.data()?['debeCambiarContrasena'] == true;
-  } catch (_) {
+  } catch (e) {
+    debugPrint('Error consultando cambio de contrasena requerido: $e');
     return false;
   }
 }
@@ -134,7 +146,7 @@ Future<bool> debeCambiarContrasena({User? user}) async {
 Future<bool> usuarioDeshabilitado({User? user}) async {
   final identificador = usuarioRolKey(user: user);
 
-  if (identificador == 'local') {
+  if (identificador == 'local' || kIsWeb) {
     return false;
   }
 
@@ -142,9 +154,11 @@ Future<bool> usuarioDeshabilitado({User? user}) async {
     final doc = await _firestore
         .collection('roles_usuarios')
         .doc(identificador)
-        .get();
+        .get()
+        .timeout(_firestoreLecturaTimeout);
     return doc.data()?['deshabilitado'] == true;
-  } catch (_) {
+  } catch (e) {
+    debugPrint('Error consultando estado de usuario: $e');
     return false;
   }
 }
