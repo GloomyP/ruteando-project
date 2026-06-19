@@ -52,7 +52,7 @@ class PerfilUsuario {
 }
 
 FirebaseFirestore get _firestore =>
-    FirebaseFirestore.instanceFor(app: Firebase.app(), databaseId: 'ruteando');
+    FirebaseFirestore.instanceFor(app: Firebase.app());
 
 String _perfilKey(User user) {
   return user.email?.toLowerCase().trim() ?? user.uid;

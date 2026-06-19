@@ -27,7 +27,10 @@ class MenuPerfilAppBar extends StatelessWidget {
       onSelected: (value) async {
         if (value == 'perfil') {
           Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => const PantallaPerfil()),
+            MaterialPageRoute<void>(
+              settings: const RouteSettings(name: '/perfil'),
+              builder: (_) => const PantallaPerfil(),
+            ),
           );
           return;
         }

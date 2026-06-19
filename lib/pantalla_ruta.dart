@@ -1246,6 +1246,16 @@ class _PantallaRutaState extends State<PantallaRuta> {
     );
   }
 
+  String _mensajeErrorAsignacion(Object error) {
+    final texto = error.toString();
+    if (texto.contains('cloud_firestore') ||
+        texto.contains('Unable to establish connection on channel')) {
+      return 'No se pudo conectar con la base de datos remota. La asignacion quedo guardada localmente para esta prueba.';
+    }
+
+    return texto;
+  }
+
   Future<void> _confirmarAsignacion(
     BuildContext context,
     Map<String, String> conductor,
@@ -1329,16 +1339,17 @@ class _PantallaRutaState extends State<PantallaRuta> {
 
       Navigator.of(context).pushReplacementNamed('/asignacion-rutas');
     } catch (e) {
+      final mensaje = _mensajeErrorAsignacion(e);
       setState(() {
         _cargando = false;
-        _estado = 'Error al asignar: $e';
+        _estado = 'Error al asignar: $mensaje';
       });
 
       if (!context.mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error al guardar la asignación: $e'),
+          content: Text('Error al guardar la asignación: $mensaje'),
           backgroundColor: Colors.red,
         ),
       );

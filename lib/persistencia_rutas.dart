@@ -7,10 +7,10 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'roles.dart';
+
 final FirebaseFirestore _firestore = FirebaseFirestore.instanceFor(
   app: Firebase.app(),
-  databaseId:
-      'ruteando', // <-- Aquí le indicamos el nombre exacto que le pusiste
 );
 
 String empresaUsuarioKey() {
@@ -42,30 +42,56 @@ String historialRutasTerminadasKey() {
 }
 
 Future<String> empresaOperativaKey() async {
+  final keys = await _empresaKeysCandidatas();
+  return keys.isNotEmpty ? keys.first : empresaUsuarioKey();
+}
+
+Future<Set<String>> _empresaKeysCandidatas() async {
   final fallback = empresaUsuarioKey();
+  final keys = <String>{};
 
   if (Firebase.apps.isEmpty) {
-    return fallback;
+    return {fallback};
   }
 
   try {
     final user = FirebaseAuth.instance.currentUser;
     final email = user?.email?.toLowerCase().trim();
-    if (email == null || email.isEmpty) {
-      return fallback;
+    final uid = user?.uid.trim();
+
+    if (email != null && email.isNotEmpty) {
+      final doc = await _firestore
+          .collection('usuarios_empresas')
+          .doc(email)
+          .get();
+      final empresaKey = doc.data()?['empresaKey']?.toString().trim();
+      if (empresaKey != null && empresaKey.isNotEmpty) {
+        keys.add(empresaKey);
+      }
     }
 
-    final doc = await _firestore
-        .collection('usuarios_empresas')
-        .doc(email)
-        .get();
-    final empresaKey = doc.data()?['empresaKey']?.toString().trim();
-    if (empresaKey != null && empresaKey.isNotEmpty) {
-      return empresaKey;
-    }
-  } catch (_) {}
+    final identificadores = [
+      email,
+      uid,
+    ].whereType<String>().where((id) => id.isNotEmpty).toSet();
 
-  return fallback;
+    for (final identificador in identificadores) {
+      final empresaDoc = await _firestore
+          .collection('empresas_usuarios')
+          .doc(identificador)
+          .get();
+      final rut = empresaDoc.data()?['rut']?.toString().trim();
+      if (rut != null && rut.isNotEmpty) {
+        keys.add(rut);
+      }
+      keys.add(identificador);
+    }
+  } catch (error) {
+    debugPrint('No se pudieron resolver llaves de empresa: $error');
+  }
+
+  keys.add(fallback);
+  return keys.where((key) => key.trim().isNotEmpty).toSet();
 }
 
 Future<void> vincularUsuarioAEmpresaActual(String email) async {
@@ -157,14 +183,18 @@ Future<void> guardarRutaAsignada(
   final prefs = await SharedPreferences.getInstance();
   await prefs.setString(_rutaAsignadaLocalKey(email), jsonEncode(ruta));
 
-  if (Firebase.apps.isEmpty) {
+  if (Firebase.apps.isEmpty || kIsWeb) {
     return;
   }
 
-  await _firestore
-      .collection('rutas_asignadas')
-      .doc(rutaAsignadaKey(email))
-      .set(ruta, SetOptions(merge: true));
+  try {
+    await _firestore
+        .collection('rutas_asignadas')
+        .doc(rutaAsignadaKey(email))
+        .set(ruta, SetOptions(merge: true));
+  } catch (error) {
+    debugPrint('No se pudo sincronizar la ruta asignada: $error');
+  }
 }
 
 // ==========================================
@@ -208,14 +238,18 @@ Future<void> guardarNotificacionRuta(
     jsonEncode(notificacion),
   );
 
-  if (Firebase.apps.isEmpty) {
+  if (Firebase.apps.isEmpty || kIsWeb) {
     return;
   }
 
-  await _firestore
-      .collection('notificaciones_rutas')
-      .doc(notificacionRutaKey(email))
-      .set(notificacion, SetOptions(merge: true));
+  try {
+    await _firestore
+        .collection('notificaciones_rutas')
+        .doc(notificacionRutaKey(email))
+        .set(notificacion, SetOptions(merge: true));
+  } catch (error) {
+    debugPrint('No se pudo sincronizar la notificacion de ruta: $error');
+  }
 }
 
 Future<void> marcarNotificacionRutaLeida(String email) async {
@@ -228,17 +262,21 @@ Future<void> marcarNotificacionRutaLeida(String email) async {
     });
   }
 
-  if (Firebase.apps.isEmpty) {
+  if (Firebase.apps.isEmpty || kIsWeb) {
     return;
   }
 
-  await _firestore
-      .collection('notificaciones_rutas')
-      .doc(notificacionRutaKey(email))
-      .update({
-        'leida': true,
-        'fechaLectura': DateTime.now().toIso8601String(),
-      });
+  try {
+    await _firestore
+        .collection('notificaciones_rutas')
+        .doc(notificacionRutaKey(email))
+        .update({
+          'leida': true,
+          'fechaLectura': DateTime.now().toIso8601String(),
+        });
+  } catch (error) {
+    debugPrint('No se pudo sincronizar lectura de notificacion: $error');
+  }
 }
 
 // ==========================================
@@ -345,24 +383,32 @@ Future<void> borrarRutaAsignada(String email) async {
   await prefs.remove(_rutaAsignadaLocalKey(email));
   await prefs.remove(_notificacionRutaLocalKey(email));
 
-  if (Firebase.apps.isEmpty) {
+  if (Firebase.apps.isEmpty || kIsWeb) {
     return;
   }
 
-  await _firestore
-      .collection('rutas_asignadas')
-      .doc(rutaAsignadaKey(email))
-      .delete();
-  await _firestore
-      .collection('notificaciones_rutas')
-      .doc(notificacionRutaKey(email))
-      .delete();
+  try {
+    await _firestore
+        .collection('rutas_asignadas')
+        .doc(rutaAsignadaKey(email))
+        .delete();
+    await _firestore
+        .collection('notificaciones_rutas')
+        .doc(notificacionRutaKey(email))
+        .delete();
+  } catch (error) {
+    debugPrint('No se pudo sincronizar borrado de ruta asignada: $error');
+  }
 }
 
 // ==========================================
 // ASIGNACIONES GLOBALES (ADMINISTRADOR)
 // ==========================================
 Future<List<Map<String, dynamic>>> cargarAsignacionesGlobales() async {
+  if (Firebase.apps.isEmpty || kIsWeb) {
+    return _cargarAsignacionesGlobalesLocales();
+  }
+
   try {
     final key = await empresaOperativaKey();
     final doc = await _firestore
@@ -377,6 +423,10 @@ Future<List<Map<String, dynamic>>> cargarAsignacionesGlobales() async {
     }
   } catch (_) {}
 
+  return _cargarAsignacionesGlobalesLocales();
+}
+
+Future<List<Map<String, dynamic>>> _cargarAsignacionesGlobalesLocales() async {
   final prefs = await SharedPreferences.getInstance();
   final data = prefs.getString(asignacionesGlobalesKey());
   if (data == null) {
@@ -400,14 +450,18 @@ Future<void> guardarAsignacionesGlobales(
   final prefs = await SharedPreferences.getInstance();
   await prefs.setString(asignacionesGlobalesKey(), jsonEncode(asignaciones));
 
-  if (Firebase.apps.isEmpty) {
+  if (Firebase.apps.isEmpty || kIsWeb) {
     return;
   }
 
   final key = await empresaOperativaKey();
-  await _firestore.collection('asignaciones_globales').doc(key).set({
-    'lista': asignaciones,
-  });
+  try {
+    await _firestore.collection('asignaciones_globales').doc(key).set({
+      'lista': asignaciones,
+    });
+  } catch (error) {
+    debugPrint('No se pudieron sincronizar asignaciones globales: $error');
+  }
 }
 
 // ==========================================
@@ -517,29 +571,169 @@ String conductoresUsuarioKey() {
   return empresaUsuarioKey();
 }
 
+String _conductoresLocalKey() {
+  return 'conductores_empresas_${conductoresUsuarioKey()}';
+}
+
+Future<List<Map<String, String>>> _cargarConductoresLocales() async {
+  final prefs = await SharedPreferences.getInstance();
+  final data = prefs.getString(_conductoresLocalKey());
+  if (data == null) {
+    return [];
+  }
+
+  final decoded = jsonDecode(data);
+  if (decoded is! List) {
+    return [];
+  }
+
+  return decoded
+      .map((conductor) {
+        if (conductor is Map) {
+          return conductor.map(
+            (key, value) => MapEntry(key.toString(), value.toString()),
+          );
+        }
+        return <String, String>{};
+      })
+      .where((element) => element.isNotEmpty)
+      .toList();
+}
+
+Future<void> _guardarConductoresLocales(
+  List<Map<String, String>> conductores,
+) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString(_conductoresLocalKey(), jsonEncode(conductores));
+}
+
 Future<List<Map<String, String>>> cargarConductoresVinculados() async {
   try {
-    final key = await empresaOperativaKey();
-    final doc = await _firestore
-        .collection('conductores_empresas')
-        .doc(key)
-        .get();
-    final data = doc.data();
-    if (data != null && data['lista'] is List) {
-      return (data['lista'] as List)
-          .map((conductor) {
-            if (conductor is Map) {
-              return conductor.map(
-                (key, value) => MapEntry(key.toString(), value.toString()),
-              );
-            }
-            return <String, String>{};
-          })
-          .where((element) => element.isNotEmpty)
-          .toList();
+    final keys = await _empresaKeysCandidatas();
+    for (final key in keys) {
+      final doc = await _firestore
+          .collection('conductores_empresas')
+          .doc(key)
+          .get();
+      final data = doc.data();
+      final conductores = _mapearConductores(data?['lista']);
+      if (conductores.isNotEmpty) {
+        await _guardarConductoresLocales(conductores);
+        return conductores;
+      }
     }
-  } catch (_) {}
-  return [];
+
+    final snapshot = await _firestore.collection('conductores_empresas').get();
+    final todos = <Map<String, String>>[];
+    final correosVistos = <String>{};
+    for (final doc in snapshot.docs) {
+      final conductores = _mapearConductores(doc.data()['lista']);
+      for (final conductor in conductores) {
+        final correo = conductor['correo']?.toLowerCase().trim() ?? '';
+        final llave = correo.isNotEmpty
+            ? correo
+            : '${conductor['rut'] ?? ''}_${conductor['nombre'] ?? ''}';
+        if (llave.isEmpty || correosVistos.contains(llave)) {
+          continue;
+        }
+        correosVistos.add(llave);
+        todos.add(conductor);
+      }
+    }
+    if (todos.isNotEmpty) {
+      await _guardarConductoresLocales(todos);
+      return todos;
+    }
+
+    final usuarios = await _cargarRepartidoresDesdeColeccionesUsuarios();
+    if (usuarios.isNotEmpty) {
+      await _guardarConductoresLocales(usuarios);
+      return usuarios;
+    }
+  } catch (error) {
+    debugPrint('No se pudieron cargar repartidores desde Firestore: $error');
+  }
+  return _cargarConductoresLocales();
+}
+
+Future<List<Map<String, String>>>
+_cargarRepartidoresDesdeColeccionesUsuarios() async {
+  const colecciones = ['usuarios', 'users', 'repartidores', 'conductores'];
+  final repartidores = <Map<String, String>>[];
+  final vistos = <String>{};
+
+  for (final coleccion in colecciones) {
+    final snapshot = await _firestore.collection(coleccion).get();
+    final esColeccionGenerica = coleccion == 'usuarios' || coleccion == 'users';
+
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      final rol = (data['rol'] ?? data['role'] ?? data['tipo'] ?? '')
+          .toString()
+          .toLowerCase()
+          .trim();
+      if (esColeccionGenerica &&
+          rol.isNotEmpty &&
+          rol != RolUsuario.repartidor.valor) {
+        continue;
+      }
+
+      final email = (data['correo'] ?? data['email'] ?? data['mail'] ?? '')
+          .toString();
+      final correo = email.trim().isNotEmpty
+          ? email.toLowerCase().trim()
+          : (doc.id.contains('@') ? doc.id.toLowerCase().trim() : '');
+      final nombre =
+          (data['nombre'] ??
+                  data['name'] ??
+                  data['displayName'] ??
+                  data['nombreCompleto'] ??
+                  correo)
+              .toString()
+              .trim();
+      final rut = (data['rut'] ?? data['run'] ?? data['dni'] ?? '')
+          .toString()
+          .trim();
+      final telefono =
+          (data['telefono'] ?? data['phone'] ?? data['celular'] ?? '')
+              .toString()
+              .trim();
+
+      final llave = correo.isNotEmpty ? correo : '${doc.id}_$nombre';
+      if (llave.trim().isEmpty || vistos.contains(llave)) {
+        continue;
+      }
+
+      vistos.add(llave);
+      repartidores.add({
+        'nombre': nombre.isNotEmpty ? nombre : 'Repartidor',
+        'rut': rut,
+        'correo': correo,
+        'telefono': telefono,
+        'rol': RolUsuario.repartidor.valor,
+      });
+    }
+  }
+
+  return repartidores;
+}
+
+List<Map<String, String>> _mapearConductores(dynamic lista) {
+  if (lista is! List) {
+    return [];
+  }
+
+  return lista
+      .map((conductor) {
+        if (conductor is Map) {
+          return conductor.map(
+            (key, value) => MapEntry(key.toString(), value.toString()),
+          );
+        }
+        return <String, String>{};
+      })
+      .where((element) => element.isNotEmpty)
+      .toList();
 }
 
 Future<List<Map<String, String>>> cargarRepartidoresAsignables() async {
@@ -554,10 +748,16 @@ bool esConductorRepartidor(Map<String, String> conductor) {
 Future<void> guardarConductoresVinculados(
   List<Map<String, String>> conductores,
 ) async {
+  await _guardarConductoresLocales(conductores);
+
   final key = await empresaOperativaKey();
-  await _firestore.collection('conductores_empresas').doc(key).set({
-    'lista': conductores,
-  });
+  try {
+    await _firestore.collection('conductores_empresas').doc(key).set({
+      'lista': conductores,
+    });
+  } catch (error) {
+    debugPrint('No se pudieron sincronizar repartidores con Firestore: $error');
+  }
 }
 
 Future<void> eliminarRepartidorDeSistema(String email) async {
