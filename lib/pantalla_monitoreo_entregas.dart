@@ -303,6 +303,8 @@ class _PantallaMonitoreoEntregasState extends State<PantallaMonitoreoEntregas> {
       padding: const EdgeInsets.all(16),
       itemCount: _asignacionesActivas.length,
       itemBuilder: (context, index) {
+        final colors = Theme.of(context).colorScheme;
+        final isDark = colors.brightness == Brightness.dark;
         final asignacion = _asignacionesActivas[index];
         final nombre =
             asignacion['repartidorNombre']?.toString() ?? 'Repartidor';
@@ -319,14 +321,23 @@ class _PantallaMonitoreoEntregasState extends State<PantallaMonitoreoEntregas> {
 
         final porcentaje = total > 0 ? entregados / total : 0.0;
         final completada = entregados == total && total > 0;
+        final cardColor = completada
+            ? colors.primaryContainer
+            : (isDark ? colors.surfaceContainerHighest : colors.surface);
+        final primaryText = completada
+            ? colors.onPrimaryContainer
+            : colors.onSurface;
+        final secondaryText = completada
+            ? colors.onPrimaryContainer.withValues(alpha: 0.82)
+            : colors.onSurfaceVariant;
 
         return Card(
           margin: const EdgeInsets.only(bottom: 16),
-          color: completada ? Colors.green[50] : Colors.white,
+          color: cardColor,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
             side: BorderSide(
-              color: completada ? Colors.green.shade300 : Colors.transparent,
+              color: completada ? colors.primary : colors.outlineVariant,
             ),
           ),
           child: Padding(
@@ -354,9 +365,10 @@ class _PantallaMonitoreoEntregasState extends State<PantallaMonitoreoEntregas> {
                         children: [
                           Text(
                             nombre,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
+                              color: primaryText,
                             ),
                           ),
                           Text(
@@ -364,9 +376,11 @@ class _PantallaMonitoreoEntregasState extends State<PantallaMonitoreoEntregas> {
                             style: TextStyle(
                               fontSize: 12,
                               color: completada
-                                  ? const Color(0xFF16A34A)
-                                  : Colors.blue[700],
-                              fontWeight: FontWeight.w600,
+                                  ? secondaryText
+                                  : (isDark
+                                        ? const Color(0xFF93C5FD)
+                                        : Colors.blue[700]),
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ],
@@ -374,9 +388,10 @@ class _PantallaMonitoreoEntregasState extends State<PantallaMonitoreoEntregas> {
                     ),
                     Text(
                       '${(porcentaje * 100).toStringAsFixed(0)}%',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
+                        color: primaryText,
                       ),
                     ),
                   ],
@@ -387,7 +402,9 @@ class _PantallaMonitoreoEntregasState extends State<PantallaMonitoreoEntregas> {
                   child: LinearProgressIndicator(
                     value: porcentaje,
                     minHeight: 10,
-                    backgroundColor: Colors.grey[200],
+                    backgroundColor: isDark
+                        ? colors.surface
+                        : colors.surfaceContainerHighest,
                     color: completada
                         ? const Color(0xFF16A34A)
                         : const Color(0xFFF97316),
@@ -402,32 +419,43 @@ class _PantallaMonitoreoEntregasState extends State<PantallaMonitoreoEntregas> {
                     _IndicadorEstado(
                       etiqueta: 'Pendientes',
                       valor: pendientes,
-                      color: Colors.grey,
+                      color: isDark ? const Color(0xFFD1D5DB) : Colors.grey,
+                      labelColor: secondaryText,
                     ),
                     _IndicadorEstado(
                       etiqueta: 'En Camino',
                       valor: enCamino,
                       color: Colors.orange,
+                      labelColor: secondaryText,
                     ),
                     _IndicadorEstado(
                       etiqueta: 'Entregadas',
                       valor: entregados,
                       color: const Color(0xFF16A34A),
+                      labelColor: secondaryText,
                     ),
                   ],
                 ),
-                const Divider(height: 24),
+                Divider(
+                  height: 24,
+                  color: completada
+                      ? colors.onPrimaryContainer.withValues(alpha: 0.45)
+                      : colors.outlineVariant,
+                ),
                 // --- Aquí integramos el detalle desplegable ---
                 Theme(
                   data: Theme.of(
                     context,
                   ).copyWith(dividerColor: Colors.transparent),
                   child: ExpansionTile(
-                    title: const Text(
+                    iconColor: primaryText,
+                    collapsedIconColor: secondaryText,
+                    title: Text(
                       'Ver paradas intermedias',
                       style: TextStyle(
                         fontSize: 12,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: FontWeight.w700,
+                        color: primaryText,
                       ),
                     ),
                     dense: true,
@@ -465,11 +493,13 @@ class _IndicadorEstado extends StatelessWidget {
     required this.etiqueta,
     required this.valor,
     required this.color,
+    required this.labelColor,
   });
 
   final String etiqueta;
   final int valor;
   final Color color;
+  final Color labelColor;
 
   @override
   Widget build(BuildContext context) {
@@ -483,7 +513,7 @@ class _IndicadorEstado extends StatelessWidget {
             color: color,
           ),
         ),
-        Text(etiqueta, style: TextStyle(fontSize: 12, color: Colors.grey[700])),
+        Text(etiqueta, style: TextStyle(fontSize: 12, color: labelColor)),
       ],
     );
   }
