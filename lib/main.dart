@@ -439,6 +439,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Ruteando'),
@@ -553,15 +554,22 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
               children: [
                 Icon(Icons.local_shipping, size: 90, color: Colors.green[700]),
                 const SizedBox(height: 24),
-                const Text(
+                Text(
                   'Bienvenido a Ruteando',
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: colors.onSurface,
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 12),
-                const Text(
+                Text(
                   'Gestiona tus operaciones de reparto desde aquí',
-                  style: TextStyle(fontSize: 16, color: Colors.black87),
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: colors.onSurfaceVariant,
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 24),
@@ -593,7 +601,13 @@ class _EmpresaVinculadaCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return Card(
+      color: colors.surfaceContainerHighest,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: colors.outlineVariant),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -601,11 +615,15 @@ class _EmpresaVinculadaCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.business_outlined, color: Colors.green[700]),
+                Icon(Icons.business_outlined, color: colors.primary),
                 const SizedBox(width: 8),
-                const Text(
+                Text(
                   'Empresa vinculada',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                    color: colors.onSurface,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
@@ -632,6 +650,7 @@ class _DatoEmpresa extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Row(
@@ -641,10 +660,18 @@ class _DatoEmpresa extends StatelessWidget {
             width: 76,
             child: Text(
               etiqueta,
-              style: const TextStyle(fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: colors.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
-          Expanded(child: Text(valor.isEmpty ? 'No registrado' : valor)),
+          Expanded(
+            child: Text(
+              valor.isEmpty ? 'No registrado' : valor,
+              style: TextStyle(color: colors.onSurface),
+            ),
+          ),
         ],
       ),
     );

@@ -125,13 +125,6 @@ class _PantallaRutaState extends State<PantallaRuta> {
     }
   }
 
-  List<String> get _paradasIngresadas {
-    return _paradaControllers
-        .map((controller) => controller.text.trim())
-        .where((parada) => parada.isNotEmpty)
-        .toList();
-  }
-
   String get _criterioNormalizado => _criterioSeleccionado.toLowerCase();
 
   bool get _optimizaDistancia => _criterioNormalizado.contains('distancia');
@@ -957,26 +950,6 @@ class _PantallaRutaState extends State<PantallaRuta> {
                             ),
                           ),
                           const SizedBox(height: 8),
-                          FutureBuilder<RolUsuario>(
-                            future: _rolFuture,
-                            builder: (context, snapshot) {
-                              final esAdmin =
-                                  snapshot.connectionState !=
-                                      ConnectionState.waiting &&
-                                  puedeAdministrar(
-                                    snapshot.data ?? RolUsuario.repartidor,
-                                  );
-
-                              if (!esAdmin) {
-                                return const SizedBox.shrink();
-                              }
-
-                              return _VistaPreviaParadas(
-                                paradas: _paradasIngresadas,
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 8),
                           Align(
                             alignment: Alignment.centerLeft,
                             child: Text(
@@ -1370,90 +1343,6 @@ class _PantallaRutaState extends State<PantallaRuta> {
         ),
       );
     }
-  }
-}
-
-class _VistaPreviaParadas extends StatelessWidget {
-  const _VistaPreviaParadas({required this.paradas});
-
-  final List<String> paradas;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorBorde = Colors.green.shade100;
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.green.shade50,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: colorBorde),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.fact_check_outlined,
-                  size: 16,
-                  color: Colors.green[800],
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'Paradas por optimizar',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.green[900],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            if (paradas.isEmpty)
-              Text(
-                'Ingresa al menos una parada.',
-                style: TextStyle(fontSize: 11, color: Colors.grey[700]),
-              )
-            else
-              ...paradas.asMap().entries.map((entry) {
-                return Padding(
-                  padding: EdgeInsets.only(top: entry.key == 0 ? 0 : 4),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        width: 22,
-                        child: Text(
-                          '${entry.key + 1}.',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        child: Text(
-                          entry.value,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 11),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-          ],
-        ),
-      ),
-    );
   }
 }
 
