@@ -1,0 +1,11 @@
+.agents/
+.dart_tool/
+.flutter-sdk/
+.git/
+.puro.json
+build/
+flutter_web_server*.log
+server-8080*.log
+web_static_server*.log
+*.err.log
+*.log
