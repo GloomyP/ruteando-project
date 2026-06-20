@@ -3878,13 +3878,20 @@ class _PantallaRegistroState extends State<PantallaRegistro> {
     setState(() => _isSaving = true);
 
     try {
-      final credential = await AppAuth.instance
-          .createUserWithEmailAndPassword(
-            email: _emailController.text.trim(),
-            password: _passwordController.text.trim(),
-          );
-      await credential.user?.updateDisplayName(_nameController.text.trim());
-      await guardarRolUsuario(RolUsuario.repartidor, user: credential.user);
+      final direccion = [
+        _calleController.text.trim(),
+        _numeroController.text.trim(),
+        _detallesController.text.trim(),
+      ].where((valor) => valor.isNotEmpty).join(' ');
+
+      await supabaseAuth.registerPublicUser(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+        name: _nameController.text.trim(),
+        region: _regionController.text.trim(),
+        comuna: _comunaController.text.trim(),
+        direccion: direccion,
+      );
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -3897,6 +3904,13 @@ class _PantallaRegistroState extends State<PantallaRegistro> {
       );
       Navigator.pop(context);
     } on AppAuthException catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error: ${e.message}"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } on SupabaseAuthException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Error: ${e.message}"),
@@ -3990,12 +4004,22 @@ class _PantallaRegistroState extends State<PantallaRegistro> {
           TextFormField(
             controller: _passwordController,
             decoration: const InputDecoration(
-              labelText: 'Contraseña',
+              labelText: 'Contrasena',
               prefixIcon: Icon(Icons.lock),
             ),
             obscureText: true,
-            validator: (v) =>
-                (v == null || v.length < 6) ? 'Mínimo 6 caracteres' : null,
+            validator: (v) {
+              final valor = v?.trim() ?? '';
+              if (valor.length < 8) {
+                return 'Minimo 8 caracteres';
+              }
+              if (!RegExp(r'[A-Z]').hasMatch(valor) ||
+                  !RegExp(r'[a-z]').hasMatch(valor) ||
+                  !RegExp(r'[0-9]').hasMatch(valor)) {
+                return 'Usa mayuscula, minuscula y numero';
+              }
+              return null;
+            },
           ),
           const SizedBox(height: 16),
           TextFormField(
