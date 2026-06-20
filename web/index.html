@@ -32,6 +32,24 @@
   <title>ruteando_app</title>
   <link rel="manifest" href="manifest.json">
   <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCOZU6OnAkzM5ln9yiCWOoEQtbdlWlWURU&loading=async" async defer></script>
+  <script>
+    (function clearOldFlutterCache() {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          registrations.forEach(function(registration) {
+            registration.unregister();
+          });
+        });
+      }
+      if ('caches' in window) {
+        caches.keys().then(function(keys) {
+          keys.forEach(function(key) {
+            caches.delete(key);
+          });
+        });
+      }
+    })();
+  </script>
 </head>
 <body>
   <!--

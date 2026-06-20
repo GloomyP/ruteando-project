@@ -307,12 +307,15 @@ Future<List<Map<String, String>>> _cargarRepartidoresDesdeSupabase() async {
   final vistos = <String>{};
   final roles = await supabaseRest.select(
     'roles_usuarios',
-    filters: {'rol': SupabaseConfig.eq(RolUsuario.repartidor.valor)},
+    filters: {
+      'rol': SupabaseConfig.eq(RolUsuario.repartidor.valor),
+      'deshabilitado': SupabaseConfig.eq('false'),
+    },
   );
 
   for (final rol in roles) {
     final correo = rol['id']?.toString().toLowerCase().trim() ?? '';
-    if (correo.isEmpty || vistos.contains(correo)) {
+    if (correo.isEmpty || vistos.contains(correo) || rol['deshabilitado'] == true) {
       continue;
     }
 
