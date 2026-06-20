@@ -58,7 +58,10 @@ class SupabaseAuthService {
 
   SupabaseAuthUser? get currentUser => _session?.user;
   String? get accessToken => _session?.accessToken;
-  Stream<SupabaseAuthUser?> authStateChanges() => _authChanges.stream;
+  Stream<SupabaseAuthUser?> authStateChanges() async* {
+    yield currentUser;
+    yield* _authChanges.stream;
+  }
 
   Uri _authUri(String path, [Map<String, String>? query]) {
     final authUrl = SupabaseConfig.restUrl.replaceFirst('/rest/v1/', '/auth/v1/');

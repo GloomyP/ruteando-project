@@ -478,11 +478,8 @@ class _AuthGateState extends State<_AuthGate> {
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
       stream: AppAuth.instance.authStateChanges(),
+      initialData: AppAuth.instance.currentUser,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const _PantallaCargaSesion(mensaje: 'Cargando sesion...');
-        }
-
         final user = snapshot.data;
         if (user == null) {
           _uidCargado = null;
