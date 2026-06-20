@@ -23,5 +23,6 @@ flutter pub get
 flutter build web \
   --release \
   --no-wasm-dry-run \
+  --pwa-strategy=none \
   --dart-define=SUPABASE_REST_URL="${SUPABASE_REST_URL:-https://zexfyjefmomuaoamwycw.supabase.co/rest/v1/}" \
   --dart-define=SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY:-sb_publishable_rrx6nMypqyFpVYw76O7rhg_zmj4Uj8o}"
