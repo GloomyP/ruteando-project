@@ -1248,9 +1248,9 @@ class _PantallaRutaState extends State<PantallaRuta> {
 
   String _mensajeErrorAsignacion(Object error) {
     final texto = error.toString();
-    if (texto.contains('cloud_firestore') ||
+    if (texto.contains('Supabase') ||
         texto.contains('Unable to establish connection on channel')) {
-      return 'No se pudo conectar con la base de datos remota. La asignacion quedo guardada localmente para esta prueba.';
+      return 'No se pudo conectar con Supabase. Revisa la conexion, las tablas y permisos de la base de datos.';
     }
 
     return texto;

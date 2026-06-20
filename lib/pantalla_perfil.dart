@@ -1,4 +1,3 @@
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import 'cierre_sesion.dart';
@@ -101,14 +100,14 @@ class _PantallaPerfilState extends State<PantallaPerfil> {
         _guardando = false;
         _mensajeExito = 'Perfil actualizado correctamente.';
       });
-    } on FirebaseException catch (e) {
+    } catch (e) {
       if (!mounted) {
         return;
       }
 
       setState(() {
         _guardando = false;
-        _mensajeError = 'Error: ${e.message}';
+        _mensajeError = 'Error: $e';
       });
     }
   }

@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 class ProductoInventario {
   const ProductoInventario({
     required this.id,
@@ -22,8 +20,8 @@ class ProductoInventario {
   final int stockMinimo;
   final String unidad;
   final String estado;
-  final Timestamp? creadoEn;
-  final Timestamp? actualizadoEn;
+  final DateTime? creadoEn;
+  final DateTime? actualizadoEn;
 
   String get estadoCalculado {
     if (stockActual == 0) {
@@ -46,8 +44,8 @@ class ProductoInventario {
     int? stockMinimo,
     String? unidad,
     String? estado,
-    Timestamp? creadoEn,
-    Timestamp? actualizadoEn,
+    DateTime? creadoEn,
+    DateTime? actualizadoEn,
   }) {
     return ProductoInventario(
       id: id ?? this.id,
@@ -63,13 +61,9 @@ class ProductoInventario {
     );
   }
 
-  factory ProductoInventario.fromFirestore(
-    DocumentSnapshot<Map<String, dynamic>> doc,
-  ) {
-    final data = doc.data() ?? <String, dynamic>{};
-
+  factory ProductoInventario.fromMap(Map<String, dynamic> data) {
     return ProductoInventario(
-      id: data['id']?.toString() ?? doc.id,
+      id: data['id']?.toString() ?? '',
       nombre: data['nombre']?.toString() ?? '',
       categoria: data['categoria']?.toString() ?? '',
       descripcion: data['descripcion']?.toString() ?? '',
@@ -77,16 +71,12 @@ class ProductoInventario {
       stockMinimo: _leerEntero(data['stockMinimo']),
       unidad: data['unidad']?.toString() ?? '',
       estado: data['estado']?.toString() ?? '',
-      creadoEn: data['creadoEn'] is Timestamp
-          ? data['creadoEn'] as Timestamp
-          : null,
-      actualizadoEn: data['actualizadoEn'] is Timestamp
-          ? data['actualizadoEn'] as Timestamp
-          : null,
+      creadoEn: _leerFecha(data['creadoEn']),
+      actualizadoEn: _leerFecha(data['actualizadoEn'] ?? data['actualizado']),
     );
   }
 
-  Map<String, dynamic> toFirestore() {
+  Map<String, dynamic> toMap() {
     return {
       'id': id,
       'nombre': nombre,
@@ -96,8 +86,8 @@ class ProductoInventario {
       'stockMinimo': stockMinimo,
       'unidad': unidad,
       'estado': estadoCalculado,
-      'creadoEn': creadoEn,
-      'actualizadoEn': actualizadoEn,
+      'creadoEn': creadoEn?.toIso8601String(),
+      'actualizadoEn': actualizadoEn?.toIso8601String(),
     };
   }
 
@@ -111,5 +101,13 @@ class ProductoInventario {
     }
 
     return int.tryParse(valor?.toString() ?? '') ?? 0;
+  }
+
+  static DateTime? _leerFecha(dynamic valor) {
+    if (valor is DateTime) {
+      return valor;
+    }
+
+    return DateTime.tryParse(valor?.toString() ?? '');
   }
 }

@@ -1,22 +1,19 @@
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import '../cierre_sesion.dart';
 import '../pantalla_configuracion.dart';
 import '../pantalla_perfil.dart';
 import '../roles.dart';
+import '../services/supabase_auth_service.dart';
 
 class MenuPerfilAppBar extends StatelessWidget {
   const MenuPerfilAppBar({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final user = Firebase.apps.isEmpty
-        ? null
-        : FirebaseAuth.instance.currentUser;
+    final user = supabaseAuth.currentUser;
     final nombre = nombreUsuarioActual();
-    final email = user?.email?.trim() ?? 'Email no registrado';
+    final email = user?.email.trim() ?? 'Email no registrado';
     final inicial = nombre.trim().isNotEmpty ? nombre.trim()[0] : 'U';
 
     return PopupMenuButton<String>(
@@ -55,7 +52,7 @@ class MenuPerfilAppBar extends StatelessWidget {
               nombre: nombre,
               email: email,
               inicial: inicial.toUpperCase(),
-              fotoUrl: user?.photoURL,
+              fotoUrl: null,
             ),
           ),
           PopupMenuItem<String>(
@@ -98,15 +95,10 @@ class MenuPerfilAppBar extends StatelessWidget {
         radius: 16,
         backgroundColor: Colors.white,
         foregroundColor: Colors.green[900],
-        backgroundImage: user?.photoURL == null
-            ? null
-            : NetworkImage(user!.photoURL!),
-        child: user?.photoURL == null
-            ? Text(
-                inicial.toUpperCase(),
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              )
-            : null,
+        child: Text(
+          inicial.toUpperCase(),
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
       ),
     );
   }

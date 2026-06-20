@@ -1,17 +1,8 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
-Future<void> limpiarEstadoSesionActual({User? user}) async {
-  final usuario = user ?? FirebaseAuth.instance.currentUser;
-  final email = usuario?.email?.toLowerCase().trim();
-  if (email == null || email.isEmpty) {
-    return;
-  }
+import 'services/supabase_auth_service.dart';
 
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.remove('notificacion_ruta_$email');
-}
+Future<void> limpiarEstadoSesionActual({SupabaseAuthUser? user}) async {}
 
 Future<void> confirmarYCerrarSesion(
   BuildContext context, {
@@ -42,9 +33,7 @@ Future<void> confirmarYCerrarSesion(
     return;
   }
 
-  final user = FirebaseAuth.instance.currentUser;
-  await limpiarEstadoSesionActual(user: user);
-  await FirebaseAuth.instance.signOut();
+  await supabaseAuth.signOut();
 
   if (!context.mounted) {
     return;

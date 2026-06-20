@@ -1,9 +1,7 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
-
 import 'persistencia_rutas.dart';
 import 'roles.dart';
+import 'services/supabase_auth_service.dart';
+import 'services/supabase_rest_service.dart';
 
 class PerfilUsuario {
   const PerfilUsuario({
@@ -33,10 +31,12 @@ class PerfilUsuario {
     };
   }
 
-  static PerfilUsuario desdeUsuario(User user, Map<String, dynamic>? data) {
+  static PerfilUsuario desdeUsuario(
+    SupabaseAuthUser user,
+    Map<String, dynamic>? data,
+  ) {
     final nombreAuth = user.displayName?.trim() ?? '';
-    final email = user.email?.toLowerCase().trim() ?? '';
-
+    final email = user.email.toLowerCase().trim();
     final nombrePerfil = data?['nombre']?.toString().trim() ?? '';
     final telefonoPerfil = data?['telefono']?.toString().trim() ?? '';
 
@@ -51,15 +51,12 @@ class PerfilUsuario {
   }
 }
 
-FirebaseFirestore get _firestore =>
-    FirebaseFirestore.instanceFor(app: Firebase.app());
-
-String _perfilKey(User user) {
-  return user.email?.toLowerCase().trim() ?? user.uid;
+String _perfilKey(SupabaseAuthUser user) {
+  return user.email.toLowerCase().trim();
 }
 
-Future<PerfilUsuario> cargarPerfilUsuario({User? user}) async {
-  final usuario = user ?? FirebaseAuth.instance.currentUser;
+Future<PerfilUsuario> cargarPerfilUsuario({SupabaseAuthUser? user}) async {
+  final usuario = user ?? supabaseAuth.currentUser;
   if (usuario == null) {
     return const PerfilUsuario(
       nombre: '',
@@ -71,63 +68,55 @@ Future<PerfilUsuario> cargarPerfilUsuario({User? user}) async {
     );
   }
 
-  if (Firebase.apps.isEmpty) {
-    return PerfilUsuario.desdeUsuario(usuario, null);
+  final rows = await supabaseRest.select(
+    'perfiles_usuarios',
+    filters: {'id': SupabaseConfig.eq(_perfilKey(usuario))},
+    limit: 1,
+  );
+  final perfil = PerfilUsuario.desdeUsuario(
+    usuario,
+    rows.isNotEmpty ? rows.first : null,
+  );
+
+  final rol = await cargarRolUsuario(user: usuario);
+  if (rol != RolUsuario.repartidor) {
+    return perfil;
   }
 
-  try {
-    final doc = await _firestore
-        .collection('perfiles_usuarios')
-        .doc(_perfilKey(usuario))
-        .get();
-    final data = doc.data();
-    final perfil = PerfilUsuario.desdeUsuario(usuario, data);
-
-    final rol = await cargarRolUsuario(user: usuario);
-    if (rol != RolUsuario.repartidor) {
-      return perfil;
-    }
-
-    final conductor = await buscarConductorPorEmail(perfil.email);
-    if (conductor == null) {
-      return perfil;
-    }
-
-    final telefonoAdmin = conductor['telefono']?.trim() ?? '';
-    final nombreAdmin = conductor['nombre']?.trim() ?? '';
-
-    return PerfilUsuario(
-      nombre: perfil.nombre.trim().isNotEmpty ? perfil.nombre : nombreAdmin,
-      email: perfil.email,
-      telefono: telefonoAdmin.isNotEmpty ? telefonoAdmin : perfil.telefono,
-      region: perfil.region,
-      comuna: perfil.comuna,
-      direccion: perfil.direccion,
-    );
-  } catch (_) {
-    return PerfilUsuario.desdeUsuario(usuario, null);
+  final conductor = await buscarConductorPorEmail(perfil.email);
+  if (conductor == null) {
+    return perfil;
   }
+
+  final telefonoAdmin = conductor['telefono']?.trim() ?? '';
+  final nombreAdmin = conductor['nombre']?.trim() ?? '';
+
+  return PerfilUsuario(
+    nombre: perfil.nombre.trim().isNotEmpty ? perfil.nombre : nombreAdmin,
+    email: perfil.email,
+    telefono: telefonoAdmin.isNotEmpty ? telefonoAdmin : perfil.telefono,
+    region: perfil.region,
+    comuna: perfil.comuna,
+    direccion: perfil.direccion,
+  );
 }
 
-Future<void> guardarPerfilUsuario(PerfilUsuario perfil, {User? user}) async {
-  final usuario = user ?? FirebaseAuth.instance.currentUser;
+Future<void> guardarPerfilUsuario(PerfilUsuario perfil, {SupabaseAuthUser? user}) async {
+  final usuario = user ?? supabaseAuth.currentUser;
   if (usuario == null) {
     return;
   }
 
   final nombre = perfil.nombre.trim();
   if (nombre.isNotEmpty && usuario.displayName != nombre) {
-    await usuario.updateDisplayName(nombre);
+    await supabaseAuth.updateDisplayName(nombre);
   }
 
-  if (Firebase.apps.isEmpty) {
-    return;
-  }
-
-  await _firestore.collection('perfiles_usuarios').doc(_perfilKey(usuario)).set(
-    {...perfil.toMap(), 'actualizado': DateTime.now().toIso8601String()},
-    SetOptions(merge: true),
-  );
+  await supabaseRest.upsert('perfiles_usuarios', {
+    'id': _perfilKey(usuario),
+    ...perfil.toMap(),
+    'actualizado': DateTime.now().toIso8601String(),
+  }, onConflict: 'id');
 
   final rol = await cargarRolUsuario(user: usuario);
   if (rol == RolUsuario.repartidor) {
@@ -145,14 +134,15 @@ Future<void> actualizarTelefonoPerfilPorAdmin({
   required String telefono,
 }) async {
   final emailNormalizado = email.toLowerCase().trim();
-  if (emailNormalizado.isEmpty || Firebase.apps.isEmpty) {
+  if (emailNormalizado.isEmpty) {
     return;
   }
 
-  await _firestore.collection('perfiles_usuarios').doc(emailNormalizado).set({
+  await supabaseRest.upsert('perfiles_usuarios', {
+    'id': emailNormalizado,
     if (nombre.trim().isNotEmpty) 'nombre': nombre.trim(),
     'email': emailNormalizado,
     'telefono': telefono.trim(),
     'actualizado': DateTime.now().toIso8601String(),
-  }, SetOptions(merge: true));
+  }, onConflict: 'id');
 }

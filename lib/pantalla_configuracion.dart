@@ -1,18 +1,18 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import 'services/app_settings_service.dart';
+import 'services/supabase_auth_service.dart';
 
 class PantallaConfiguracion extends StatelessWidget {
   const PantallaConfiguracion({super.key});
 
   Future<void> _cambiarContrasena(BuildContext context) async {
-    final email = FirebaseAuth.instance.currentUser?.email;
+    final email = supabaseAuth.currentUser?.email;
     if (email == null || email.trim().isEmpty) {
       return;
     }
 
-    await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+    await supabaseAuth.sendPasswordResetEmail(email);
     if (!context.mounted) {
       return;
     }

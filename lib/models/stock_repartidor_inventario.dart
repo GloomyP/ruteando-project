@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 class StockRepartidorInventario {
   const StockRepartidorInventario({
     required this.id,
@@ -19,32 +17,26 @@ class StockRepartidorInventario {
   final int bidonesEntregados;
   final int bidonesRetornados;
   final int bidonesDanados;
-  final Timestamp? actualizadoEn;
+  final DateTime? actualizadoEn;
 
   int get stockPendiente {
     return bidonesCargados - bidonesEntregados - bidonesDanados;
   }
 
-  factory StockRepartidorInventario.fromFirestore(
-    DocumentSnapshot<Map<String, dynamic>> doc,
-  ) {
-    final data = doc.data() ?? <String, dynamic>{};
-
+  factory StockRepartidorInventario.fromMap(Map<String, dynamic> data) {
     return StockRepartidorInventario(
-      id: data['id']?.toString() ?? doc.id,
+      id: data['id']?.toString() ?? '',
       nombre: data['nombre']?.toString() ?? '',
       email: data['email']?.toString() ?? '',
       bidonesCargados: _leerEntero(data['bidonesCargados']),
       bidonesEntregados: _leerEntero(data['bidonesEntregados']),
       bidonesRetornados: _leerEntero(data['bidonesRetornados']),
       bidonesDanados: _leerEntero(data['bidonesDanados']),
-      actualizadoEn: data['actualizadoEn'] is Timestamp
-          ? data['actualizadoEn'] as Timestamp
-          : null,
+      actualizadoEn: _leerFecha(data['actualizadoEn'] ?? data['actualizado']),
     );
   }
 
-  Map<String, dynamic> toFirestore() {
+  Map<String, dynamic> toMap() {
     return {
       'id': id,
       'nombre': nombre,
@@ -54,7 +46,7 @@ class StockRepartidorInventario {
       'bidonesRetornados': bidonesRetornados,
       'bidonesDanados': bidonesDanados,
       'stockPendiente': stockPendiente,
-      'actualizadoEn': actualizadoEn,
+      'actualizadoEn': actualizadoEn?.toIso8601String(),
     };
   }
 
@@ -68,5 +60,13 @@ class StockRepartidorInventario {
     }
 
     return int.tryParse(valor?.toString() ?? '') ?? 0;
+  }
+
+  static DateTime? _leerFecha(dynamic valor) {
+    if (valor is DateTime) {
+      return valor;
+    }
+
+    return DateTime.tryParse(valor?.toString() ?? '');
   }
 }
