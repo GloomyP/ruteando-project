@@ -1056,11 +1056,10 @@ class _PantallaConductoresState extends State<PantallaConductores> {
     required String correo,
     required String contrasena,
   }) async {
-    await supabaseAuth.signUp(
+    await supabaseAuth.createConfirmedUser(
       email: correo,
       password: contrasena,
       name: nombre,
-      keepCurrentSession: true,
     );
   }
 
