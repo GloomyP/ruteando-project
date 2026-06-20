@@ -174,6 +174,48 @@ class SupabaseAuthService {
     return SupabaseAuthUser.fromJson(Map<String, dynamic>.from(userJson));
   }
 
+  Future<SupabaseAuthUser> registerPublicUser({
+    required String email,
+    required String password,
+    required String name,
+    String telefono = '',
+    String region = '',
+    String comuna = '',
+    String direccion = '',
+  }) async {
+    final endpoint = Uri.base.resolve('/api/register-user');
+    final response = await _client.post(
+      endpoint,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: jsonEncode({
+        'email': email,
+        'password': password,
+        'name': name,
+        'telefono': telefono,
+        'region': region,
+        'comuna': comuna,
+        'direccion': direccion,
+      }),
+    );
+
+    if (response.statusCode == 404 &&
+        (Uri.base.host == 'localhost' || Uri.base.host == '127.0.0.1')) {
+      return signUp(
+        email: email,
+        password: password,
+        name: name,
+        keepCurrentSession: true,
+      );
+    }
+
+    final decoded = _decode(response);
+    final userJson = decoded['user'] is Map ? decoded['user'] : decoded;
+    return SupabaseAuthUser.fromJson(Map<String, dynamic>.from(userJson));
+  }
+
   Future<void> updatePassword(String password) async {
     final response = await _client.put(
       _authUri('user'),
