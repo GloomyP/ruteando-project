@@ -207,6 +207,11 @@ Future<List<Map<String, dynamic>>> cargarAsignacionesGlobales() async {
 Future<void> guardarAsignacionesGlobales(
   List<Map<String, dynamic>> asignaciones,
 ) async {
+  final rol = await cargarRolUsuario();
+  if (!puedeAdministrar(rol)) {
+    return;
+  }
+
   final key = await empresaOperativaKey();
   await supabaseRest.upsert('asignaciones_globales', {
     'id': key,
