@@ -134,6 +134,46 @@ class SupabaseAuthService {
     return user;
   }
 
+  Future<SupabaseAuthUser> createConfirmedUser({
+    required String email,
+    required String password,
+    String? name,
+  }) async {
+    final token = _session?.accessToken;
+    if (token == null || token.isEmpty) {
+      throw const SupabaseAuthException('Sesion de administrador requerida.', 401);
+    }
+
+    final endpoint = Uri.base.resolve('/api/create-user');
+    final response = await _client.post(
+      endpoint,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: jsonEncode({
+        'email': email,
+        'password': password,
+        if (name != null && name.trim().isNotEmpty) 'name': name,
+      }),
+    );
+
+    if (response.statusCode == 404 &&
+        (Uri.base.host == 'localhost' || Uri.base.host == '127.0.0.1')) {
+      return signUp(
+        email: email,
+        password: password,
+        name: name,
+        keepCurrentSession: true,
+      );
+    }
+
+    final decoded = _decode(response);
+    final userJson = decoded['user'] is Map ? decoded['user'] : decoded;
+    return SupabaseAuthUser.fromJson(Map<String, dynamic>.from(userJson));
+  }
+
   Future<void> updatePassword(String password) async {
     final response = await _client.put(
       _authUri('user'),

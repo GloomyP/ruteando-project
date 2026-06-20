@@ -59,7 +59,13 @@ SUPABASE_REST_URL=https://zexfyjefmomuaoamwycw.supabase.co/rest/v1/
 SUPABASE_ANON_KEY=sb_publishable_rrx6nMypqyFpVYw76O7rhg_zmj4Uj8o
 ```
 
-No configurar `SUPABASE_SERVICE_ROLE_KEY` en el frontend ni en Vercel para esta app web.
+Variable requerida en Vercel para que un administrador pueda crear repartidores con email confirmado:
+
+```text
+SUPABASE_SERVICE_ROLE_KEY=...
+```
+
+Esta variable se usa solo en la funcion serverless `api/create-user.js`. No debe exponerse en Flutter ni usarse como `--dart-define`.
 
 ## Produccion
 
