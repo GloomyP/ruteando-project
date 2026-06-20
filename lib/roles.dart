@@ -1,3 +1,7 @@
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+
 import 'services/supabase_auth_service.dart';
 import 'services/supabase_rest_service.dart';
 
@@ -126,6 +130,36 @@ Future<void> marcarContrasenaCambiada({SupabaseAuthUser? user}) async {
   final identificador = usuarioRolKey(user: user);
   if (identificador == 'local') {
     return;
+  }
+
+  final token = supabaseAuth.accessToken;
+  if (token != null && token.isNotEmpty) {
+    final endpoint = Uri.base.resolve('/api/mark-password-changed');
+    final response = await http.post(
+      endpoint,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+    );
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return;
+    }
+
+    if (!(response.statusCode == 404 &&
+        (Uri.base.host == 'localhost' || Uri.base.host == '127.0.0.1'))) {
+      final body = response.body.trim();
+      final decoded = body.isEmpty ? null : jsonDecode(body);
+      final mensaje = decoded is Map
+          ? (decoded['error'] ?? decoded['message'])?.toString()
+          : null;
+      throw SupabaseAuthException(
+        mensaje ?? 'No se pudo marcar la contrasena como cambiada.',
+        response.statusCode,
+      );
+    }
   }
 
   await supabaseRest.upsert('roles_usuarios', {

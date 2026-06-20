@@ -263,6 +263,20 @@ create policy "roles_usuario_registro_repartidor" on public.roles_usuarios
     and deshabilitado = false
   );
 
+drop policy if exists "roles_usuario_actualiza_contrasena" on public.roles_usuarios;
+create policy "roles_usuario_actualiza_contrasena" on public.roles_usuarios
+  for update to authenticated
+  using (
+    id = public.ruteando_usuario_email()
+    and rol = 'repartidor'
+    and deshabilitado = false
+  )
+  with check (
+    id = public.ruteando_usuario_email()
+    and rol = 'repartidor'
+    and deshabilitado = false
+  );
+
 drop policy if exists "perfiles_usuario_total" on public.perfiles_usuarios;
 create policy "perfiles_usuario_total" on public.perfiles_usuarios
   for all to authenticated
