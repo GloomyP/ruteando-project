@@ -3268,9 +3268,25 @@ class _PantallaCambioContrasenaObligatorioState
     } on AppAuthException catch (e) {
       setState(() {
         _isSaving = false;
-        _errorMessage = 'Error: ${e.message}';
+        _errorMessage = _mensajeErrorCambioContrasena(e.message);
+      });
+    } catch (e) {
+      setState(() {
+        _isSaving = false;
+        _errorMessage = _mensajeErrorCambioContrasena(e.toString());
       });
     }
+  }
+
+  String _mensajeErrorCambioContrasena(String? mensaje) {
+    final texto = mensaje?.toLowerCase() ?? '';
+    if (texto.contains('password') ||
+        texto.contains('contrasena') ||
+        texto.contains('422')) {
+      return 'La nueva contrasena no cumple la politica de seguridad. Usa minimo 8 caracteres, una mayuscula, una minuscula y un numero.';
+    }
+
+    return 'No se pudo cambiar la contrasena. ${mensaje ?? ''}'.trim();
   }
 
   @override
@@ -3307,9 +3323,11 @@ class _PantallaCambioContrasenaObligatorioState
                       prefixIcon: Icon(Icons.lock),
                     ),
                     obscureText: true,
-                    validator: (v) => (v == null || v.trim().length < 6)
-                        ? 'Minimo 6 caracteres'
-                        : null,
+                    validator: (v) => (v == null || v.trim().length < 8)
+                        ? 'Minimo 8 caracteres'
+                        : (!_contrasenaSegura(v.trim())
+                              ? 'Usa mayuscula, minuscula y numero'
+                              : null),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
@@ -3356,6 +3374,13 @@ class _PantallaCambioContrasenaObligatorioState
         ),
       ),
     );
+  }
+
+  bool _contrasenaSegura(String valor) {
+    return valor.length >= 8 &&
+        RegExp(r'[A-Z]').hasMatch(valor) &&
+        RegExp(r'[a-z]').hasMatch(valor) &&
+        RegExp(r'[0-9]').hasMatch(valor);
   }
 }
 

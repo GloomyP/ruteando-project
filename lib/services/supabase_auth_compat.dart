@@ -23,7 +23,16 @@ class User extends SupabaseAuthUser {
   }
 
   Future<void> updatePassword(String password) {
-    return supabaseAuth.updatePassword(password);
+    return supabaseAuth.updatePassword(password).catchError((error) {
+      if (error is SupabaseAuthException) {
+        throw AppAuthException(
+          code: 'supabase-auth',
+          message: error.message,
+        );
+      }
+
+      throw error;
+    });
   }
 }
 
