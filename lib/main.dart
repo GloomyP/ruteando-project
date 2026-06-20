@@ -1,13 +1,7 @@
 import 'dart:async';
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'firebase_options.dart';
 import 'menu_drawer.dart';
 import 'persistencia_rutas.dart';
 import 'pantalla_ruta.dart';
@@ -18,9 +12,11 @@ import 'pantalla_inventario.dart';
 import 'perfil_usuario.dart';
 import 'services/app_settings_service.dart';
 import 'services/notificaciones_service.dart';
+import 'services/supabase_auth_service.dart';
+import 'services/supabase_auth_compat.dart';
+import 'services/supabase_rest_service.dart';
 import 'widgets/campana_notificaciones_admin.dart';
 import 'widgets/menu_perfil_appbar.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:ui' as ui;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'cierre_sesion.dart';
@@ -28,22 +24,6 @@ import 'directions_service.dart'
     if (dart.library.js) 'directions_service_web.dart';
 
 String _empresaUsuarioKey() => empresaUsuarioKey();
-
-Future<Map<String, String>?> _cargarEmpresaLocal() async {
-  final prefs = await SharedPreferences.getInstance();
-  final data = prefs.getString(_empresaUsuarioKey());
-
-  if (data == null) {
-    return null;
-  }
-
-  final decoded = jsonDecode(data);
-  if (decoded is! Map<String, dynamic>) {
-    return null;
-  }
-
-  return decoded.map((key, value) => MapEntry(key, value.toString()));
-}
 
 class _EstadoSesion {
   const _EstadoSesion({
@@ -79,109 +59,102 @@ Future<_EstadoSesion> _cargarEstadoSesion(User user) async {
   } catch (error) {
     debugPrint('Error preparando estado de sesion: $error');
     return const _EstadoSesion(
-      rol: RolUsuario.admin,
+      rol: RolUsuario.repartidor,
       debeCambiarContrasena: false,
       cuentaDeshabilitada: false,
     );
   }
 }
 
-// Inicializamos la instancia conectada a tu base de datos específica "ruteando"
-final FirebaseFirestore _firestore = FirebaseFirestore.instanceFor(
-  app: Firebase.app(),
-);
-
 Future<Map<String, String>?> _cargarEmpresaVinculada() async {
   try {
-    final user = FirebaseAuth.instance.currentUser;
+    if (!supabaseRest.isConfigured) {
+      return null;
+    }
+
+    final user = AppAuth.instance.currentUser;
     final candidatos = [
-      user?.email?.toLowerCase().trim(),
+      user?.email.toLowerCase().trim(),
       user?.uid,
     ].whereType<String>().where((id) => id.isNotEmpty).toSet();
 
     for (final identificador in candidatos) {
-      // 1. Intentar cargar los datos desde la nube (Firestore)
-      final doc = await _firestore
-          .collection('empresas_usuarios')
-          .doc(identificador)
-          .get();
-      if (doc.exists && doc.data() != null) {
-        final Map<String, dynamic> data = doc.data()!;
-        final Map<String, String> empresa = data.map(
-          (key, value) => MapEntry(key, value.toString()),
+      final relaciones = await supabaseRest.select(
+        'usuarios_empresas',
+        filters: {'id': SupabaseConfig.eq(identificador)},
+        limit: 1,
+      );
+
+      final empresaKey = relaciones.isEmpty
+          ? null
+          : (relaciones.first['empresa_key'] ?? relaciones.first['empresaKey'])
+                ?.toString()
+                .trim();
+
+      if (empresaKey != null && empresaKey.isNotEmpty) {
+        final empresas = await supabaseRest.select(
+          'empresas',
+          filters: {'id': SupabaseConfig.eq(empresaKey)},
+          limit: 1,
         );
 
-        // Actualizamos el respaldo en SharedPreferences por si acaso
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(_empresaUsuarioKey(), jsonEncode(empresa));
-
-        return empresa;
+        if (empresas.isNotEmpty) {
+          return empresas.first.map(
+            (key, value) => MapEntry(key, value?.toString() ?? ''),
+          );
+        }
       }
     }
 
-    const coleccionesEmpresa = [
-      'empresas_usuarios',
-      'empresas',
-      'empresa',
-      'companies',
-    ];
-    for (final coleccion in coleccionesEmpresa) {
-      final empresasSnapshot = await _firestore
-          .collection(coleccion)
-          .limit(1)
-          .get();
-      if (empresasSnapshot.docs.isNotEmpty) {
-        final data = empresasSnapshot.docs.first.data();
-        final empresa = data.map(
-          (key, value) => MapEntry(key, value.toString()),
-        );
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(_empresaUsuarioKey(), jsonEncode(empresa));
-        return empresa;
-      }
+    final empresas = await supabaseRest.select('empresas', limit: 1);
+    if (empresas.isNotEmpty) {
+      return empresas.first.map(
+        (key, value) => MapEntry(key, value?.toString() ?? ''),
+      );
     }
   } catch (error) {
-    debugPrint('Error al cargar la empresa desde Firestore: $error');
-    // Si no hay red o falla Firestore, el flujo cae al respaldo de SharedPreferences
+    debugPrint('Error al cargar la empresa desde Supabase: $error');
   }
 
-  // 2. Respaldo local tradicional con SharedPreferences
-  return _cargarEmpresaLocal();
+  return null;
 }
 
 Future<void> _guardarEmpresaVinculada(Map<String, String> empresa) async {
-  // 1. Guardar localmente en SharedPreferences para acceso rápido inmediato
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setString(_empresaUsuarioKey(), jsonEncode(empresa));
-
-  // 2. Guardar en la nube (Firestore) para persistencia real multiusuario
   try {
-    final user = FirebaseAuth.instance.currentUser;
-    final email = user?.email?.toLowerCase().trim();
+    if (!supabaseRest.isConfigured) {
+      return;
+    }
+
+    final user = AppAuth.instance.currentUser;
+    final email = user?.email.toLowerCase().trim();
     final uid = user?.uid;
-    final identificadores = [
-      email,
-      uid,
-    ].whereType<String>().where((id) => id.isNotEmpty).toSet();
+    final rut = empresa['rut']?.trim();
+    final empresaKey = rut != null && rut.isNotEmpty
+        ? rut
+        : (email?.isNotEmpty == true
+              ? email!
+              : uid ?? DateTime.now().microsecondsSinceEpoch.toString());
+
+    await supabaseRest.upsert('empresas', {
+      'id': empresaKey,
+      ...empresa,
+      'actualizado': DateTime.now().toIso8601String(),
+    }, onConflict: 'id');
+
+    final identificadores = [email, uid]
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toSet();
 
     for (final identificador in identificadores) {
-      await _firestore
-          .collection('empresas_usuarios')
-          .doc(identificador)
-          .set(empresa, SetOptions(merge: true));
+      await supabaseRest.upsert('usuarios_empresas', {
+        'id': identificador,
+        'empresa_key': empresaKey,
+        'actualizado': DateTime.now().toIso8601String(),
+      }, onConflict: 'id');
     }
-
-    if (email != null && email.isNotEmpty) {
-      final empresaKey = empresa['rut']?.trim();
-      if (empresaKey != null && empresaKey.isNotEmpty) {
-        await _firestore.collection('usuarios_empresas').doc(email).set({
-          'empresaKey': empresaKey,
-          'actualizado': DateTime.now().toIso8601String(),
-        }, SetOptions(merge: true));
-      }
-    }
-  } catch (e) {
-    debugPrint('Error al guardar la empresa en Firestore: $e');
+  } catch (error) {
+    debugPrint('Error al guardar la empresa en Supabase: $error');
   }
 }
 
@@ -230,11 +203,9 @@ class _RutInputFormatter extends TextInputFormatter {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Inicializamos Firebase al arrancar la app
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   if (kIsWeb) {
-    final auth = FirebaseAuth.instance;
-    await auth.setPersistence(Persistence.NONE);
+    final auth = AppAuth.instance;
+    await auth.setPersistence(Persistence.none);
     await auth.signOut();
   }
   await appSettingsService.cargar();
@@ -382,7 +353,7 @@ class _RuteandoAppState extends State<RuteandoApp> {
           ),
         ),
       ),
-      // StreamBuilder escucha automáticamente si Firebase tiene un usuario activo
+      // StreamBuilder escucha automáticamente si Supabase Auth tiene un usuario activo
       navigatorObservers: [_fondoRutaObserver],
       routes: {
         '/login': (context) => const PantallaLogin(),
@@ -506,7 +477,7 @@ class _AuthGateState extends State<_AuthGate> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
+      stream: AppAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const _PantallaCargaSesion(mensaje: 'Cargando sesion...');
@@ -531,7 +502,7 @@ class _AuthGateState extends State<_AuthGate> {
             final estado =
                 estadoSnapshot.data ??
                 const _EstadoSesion(
-                  rol: RolUsuario.admin,
+                  rol: RolUsuario.repartidor,
                   debeCambiarContrasena: false,
                   cuentaDeshabilitada: false,
                 );
@@ -583,9 +554,7 @@ class PantallaProtegidaAdmin extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final user = Firebase.apps.isEmpty
-        ? null
-        : FirebaseAuth.instance.currentUser;
+    final user = AppAuth.instance.currentUser;
     if (user == null) {
       return const PantallaLogin();
     }
@@ -599,7 +568,7 @@ class PantallaProtegidaAdmin extends StatelessWidget {
           );
         }
 
-        final rol = snapshot.data ?? RolUsuario.admin;
+        final rol = snapshot.data ?? RolUsuario.repartidor;
         return puedeAdministrar(rol) ? pantalla : const PantallaRutaAsignada();
       },
     );
@@ -1039,12 +1008,12 @@ class _PantallaConductoresState extends State<PantallaConductores> {
 
   String _mensajeErrorAmigable(Object error) {
     final texto = error.toString();
-    if (texto.contains('cloud_firestore') ||
+    if (texto.contains('Supabase') ||
         texto.contains('Unable to establish connection on channel')) {
-      return 'No se pudo conectar con la base de datos remota. Los datos quedaron guardados localmente para esta prueba.';
+      return 'No se pudo conectar con Supabase. Revisa la conexion, tablas y permisos de la base de datos.';
     }
 
-    if (error is FirebaseException && error.message != null) {
+    if (error is AppAuthException && error.message != null) {
       return error.message!;
     }
 
@@ -1090,36 +1059,17 @@ class _PantallaConductoresState extends State<PantallaConductores> {
     required String correo,
     required String contrasena,
   }) async {
-    if (Firebase.apps.isEmpty) {
-      return;
-    }
-
-    final app = await Firebase.initializeApp(
-      name:
-          'ruteando-creacion-repartidor-${DateTime.now().microsecondsSinceEpoch}',
-      options: DefaultFirebaseOptions.currentPlatform,
+    await supabaseAuth.signUp(
+      email: correo,
+      password: contrasena,
+      name: nombre,
+      keepCurrentSession: true,
     );
-
-    try {
-      final auth = FirebaseAuth.instanceFor(app: app);
-      final credential = await auth.createUserWithEmailAndPassword(
-        email: correo,
-        password: contrasena,
-      );
-      await credential.user?.updateDisplayName(nombre);
-      await auth.signOut();
-    } finally {
-      await app.delete();
-    }
   }
 
   Future<Map<String, String>> _cargarContrasenasVisibles(
     List<Map<String, String>> conductores,
   ) async {
-    if (Firebase.apps.isEmpty) {
-      return {};
-    }
-
     final contrasenas = <String, String>{};
 
     for (final conductor in conductores) {
@@ -1129,11 +1079,16 @@ class _PantallaConductoresState extends State<PantallaConductores> {
       }
 
       try {
-        final doc = await _firestore
-            .collection('roles_usuarios')
-            .doc(correo)
-            .get();
-        final visible = doc.data()?['contrasenaTemporalVisible']?.toString();
+        final rows = await supabaseRest.select(
+          'roles_usuarios',
+          filters: {'id': SupabaseConfig.eq(correo)},
+          limit: 1,
+        );
+        final visible = rows.isEmpty
+            ? null
+            : (rows.first['contrasenaTemporalVisible'] ??
+                    rows.first['contrasena_temporal_visible'])
+                ?.toString();
         if (visible != null && visible.isNotEmpty) {
           contrasenas[correo] = visible;
         }
@@ -1224,31 +1179,27 @@ class _PantallaConductoresState extends State<PantallaConductores> {
         correo: correo,
         contrasena: contrasenaTemporal,
       );
-      if (Firebase.apps.isNotEmpty) {
-        try {
-          await guardarCambioContrasenaRequerido(
-            email: correo,
-            contrasenaTemporal: contrasenaTemporal,
-          );
-        } catch (error) {
-          debugPrint(
-            'No se pudo sincronizar cambio de contrasena requerido: $error',
-          );
-        }
+      try {
+        await guardarCambioContrasenaRequerido(
+          email: correo,
+          contrasenaTemporal: contrasenaTemporal,
+        );
+      } catch (error) {
+        debugPrint(
+          'No se pudo sincronizar cambio de contrasena requerido: $error',
+        );
       }
       await guardarConductoresVinculados(conductoresActualizados);
-      if (Firebase.apps.isNotEmpty) {
-        try {
-          await actualizarTelefonoPerfilPorAdmin(
-            email: correo,
-            nombre: nombre,
-            telefono: _telefonoController.text.trim(),
-          );
-        } catch (error) {
-          debugPrint('No se pudo sincronizar el perfil del repartidor: $error');
-        }
+      try {
+        await actualizarTelefonoPerfilPorAdmin(
+          email: correo,
+          nombre: nombre,
+          telefono: _telefonoController.text.trim(),
+        );
+      } catch (error) {
+        debugPrint('No se pudo sincronizar el perfil del repartidor: $error');
       }
-    } on FirebaseException catch (e) {
+    } on AppAuthException catch (e) {
       if (!mounted) {
         return;
       }
@@ -1427,24 +1378,22 @@ class _PantallaConductoresState extends State<PantallaConductores> {
 
     final repartidoresActualizados = [..._conductores];
     repartidoresActualizados[index] = repartidorActualizado;
-    if (Firebase.apps.isNotEmpty) {
-      await guardarConductoresVinculados(repartidoresActualizados);
-      await guardarRolUsuarioPorEmail(
+    await guardarConductoresVinculados(repartidoresActualizados);
+    await guardarRolUsuarioPorEmail(
+      repartidorActualizado['correo'] ?? '',
+      RolUsuario.desdeValor(repartidorActualizado['rol']),
+    );
+    if (RolUsuario.desdeValor(repartidorActualizado['rol']) ==
+        RolUsuario.admin) {
+      await vincularUsuarioAEmpresaActual(
         repartidorActualizado['correo'] ?? '',
-        RolUsuario.desdeValor(repartidorActualizado['rol']),
-      );
-      if (RolUsuario.desdeValor(repartidorActualizado['rol']) ==
-          RolUsuario.admin) {
-        await vincularUsuarioAEmpresaActual(
-          repartidorActualizado['correo'] ?? '',
-        );
-      }
-      await actualizarTelefonoPerfilPorAdmin(
-        email: repartidorActualizado['correo'] ?? '',
-        nombre: repartidorActualizado['nombre'] ?? '',
-        telefono: repartidorActualizado['telefono'] ?? '',
       );
     }
+    await actualizarTelefonoPerfilPorAdmin(
+      email: repartidorActualizado['correo'] ?? '',
+      nombre: repartidorActualizado['nombre'] ?? '',
+      telefono: repartidorActualizado['telefono'] ?? '',
+    );
 
     if (!mounted) {
       return;
@@ -1493,12 +1442,10 @@ class _PantallaConductoresState extends State<PantallaConductores> {
     final repartidoresActualizados = [..._conductores]..removeAt(index);
 
     try {
-      if (Firebase.apps.isNotEmpty) {
-        await guardarConductoresVinculados(repartidoresActualizados);
-        await eliminarRepartidorDeSistema(correo);
-        await deshabilitarUsuarioRepartidor(correo);
-      }
-    } on FirebaseException catch (e) {
+      await guardarConductoresVinculados(repartidoresActualizados);
+      await eliminarRepartidorDeSistema(correo);
+      await deshabilitarUsuarioRepartidor(correo);
+    } on AppAuthException catch (e) {
       if (!mounted) {
         return;
       }
@@ -2064,7 +2011,7 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
 
   String get _driverEmail {
     try {
-      final user = FirebaseAuth.instance.currentUser;
+      final user = AppAuth.instance.currentUser;
       return user?.email ?? 'local';
     } catch (_) {
       return 'local';
@@ -3079,9 +3026,9 @@ class PantallaPerfilLegacy extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = AppAuth.instance.currentUser;
 
-    // Firebase entrega nombre y correo si existen; los otros datos quedan
+    // Supabase Auth entrega nombre y correo si existen; los otros datos quedan
     // preparados como placeholders hasta conectar una base de datos de perfil.
     final nombre = user?.displayName?.trim().isNotEmpty == true
         ? user!.displayName!
@@ -3199,7 +3146,7 @@ class PantallaDashboard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = AppAuth.instance.currentUser;
     final email = user?.email ?? 'usuario';
 
     return Scaffold(
@@ -3243,7 +3190,7 @@ class PantallaDashboard extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
                     const Text(
-                      'Gestión de sesión ahora controlada por Firebase Authentication.',
+                      'Gestión de sesión ahora controlada por Supabase Auth.',
                     ),
                     const SizedBox(height: 24),
                     FilledButton.icon(
@@ -3306,9 +3253,9 @@ class _PantallaCambioContrasenaObligatorioState
     });
 
     try {
-      final user = FirebaseAuth.instance.currentUser;
+      final user = AppAuth.instance.currentUser;
       if (user == null) {
-        throw FirebaseAuthException(
+        throw AppAuthException(
           code: 'no-current-user',
           message: 'No hay una sesion activa.',
         );
@@ -3322,7 +3269,7 @@ class _PantallaCambioContrasenaObligatorioState
       }
 
       Navigator.of(context).pushReplacementNamed('/mi-ruta');
-    } on FirebaseAuthException catch (e) {
+    } on AppAuthException catch (e) {
       setState(() {
         _isSaving = false;
         _errorMessage = 'Error: ${e.message}';
@@ -3417,7 +3364,7 @@ class _PantallaCambioContrasenaObligatorioState
 }
 
 // ==========================================
-// PANTALLA LOGIN (Mantenida y conectada a Firebase)
+// PANTALLA LOGIN (conectada a Supabase Auth)
 // ==========================================
 class PantallaLogin extends StatefulWidget {
   const PantallaLogin({super.key});
@@ -3457,12 +3404,12 @@ class _PantallaLoginState extends State<PantallaLogin> {
     });
 
     try {
-      // Conexión real con Firebase
-      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+      // Conexion real con Supabase Auth
+      final credential = await AppAuth.instance.signInWithEmailAndPassword(
         email: _email,
         password: _password,
       );
-      final user = credential.user ?? FirebaseAuth.instance.currentUser;
+      final user = credential.user ?? AppAuth.instance.currentUser;
       if (user == null) {
         throw StateError('No se pudo obtener la sesion del usuario.');
       }
@@ -3470,7 +3417,7 @@ class _PantallaLoginState extends State<PantallaLogin> {
       final estado = await _cargarEstadoSesion(user);
       if (estado.cuentaDeshabilitada) {
         await limpiarEstadoSesionActual();
-        await FirebaseAuth.instance.signOut();
+        await AppAuth.instance.signOut();
         if (!mounted) {
           return;
         }
@@ -3509,7 +3456,7 @@ class _PantallaLoginState extends State<PantallaLogin> {
       Navigator.of(
         context,
       ).pushNamedAndRemoveUntil('/inicio', (route) => false);
-    } on FirebaseAuthException catch (e) {
+    } on AppAuthException catch (e) {
       setState(() {
         _isLoading = false;
         _errorMessage = 'Error: ${e.message}';
@@ -3659,7 +3606,7 @@ class PantallaCuentaDeshabilitada extends StatelessWidget {
 
   Future<void> _cerrarSesion() async {
     await limpiarEstadoSesionActual();
-    await FirebaseAuth.instance.signOut();
+    await AppAuth.instance.signOut();
   }
 
   @override
@@ -3725,12 +3672,12 @@ class _PantallaCrearContrasenaState extends State<PantallaCrearContrasena> {
     });
 
     try {
-      await FirebaseAuth.instance.sendPasswordResetEmail(email: _email);
+      await AppAuth.instance.sendPasswordResetEmail(email: _email);
       setState(() {
         _enviado = true;
         _isLoading = false;
       });
-    } on FirebaseAuthException catch (e) {
+    } on AppAuthException catch (e) {
       setState(() {
         _isLoading = false;
         _errorMessage = 'Error: ${e.message}';
@@ -3872,7 +3819,7 @@ class _PantallaCrearContrasenaState extends State<PantallaCrearContrasena> {
 }
 
 // ==========================================
-// PANTALLA REGISTRO (Mantenida y conectada a Firebase)
+// PANTALLA REGISTRO (conectada a Supabase Auth)
 // ==========================================
 class PantallaRegistro extends StatefulWidget {
   const PantallaRegistro({super.key});
@@ -3895,7 +3842,6 @@ class _PantallaRegistroState extends State<PantallaRegistro> {
   final _detallesController = TextEditingController();
   bool _isSaving = false;
   bool _showAddressStep = false;
-  RolUsuario _rolSeleccionado = RolUsuario.admin;
 
   void _goToAddressStep() {
     if (!_personalFormKey.currentState!.validate()) return;
@@ -3911,25 +3857,25 @@ class _PantallaRegistroState extends State<PantallaRegistro> {
     setState(() => _isSaving = true);
 
     try {
-      final credential = await FirebaseAuth.instance
+      final credential = await AppAuth.instance
           .createUserWithEmailAndPassword(
             email: _emailController.text.trim(),
             password: _passwordController.text.trim(),
           );
       await credential.user?.updateDisplayName(_nameController.text.trim());
-      await guardarRolUsuario(_rolSeleccionado, user: credential.user);
+      await guardarRolUsuario(RolUsuario.repartidor, user: credential.user);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            "Usuario ${_nameController.text} registrado como ${_rolSeleccionado.valor}.",
+            "Usuario ${_nameController.text} registrado como repartidor.",
           ),
           backgroundColor: Colors.green,
         ),
       );
       Navigator.pop(context);
-    } on FirebaseAuthException catch (e) {
+    } on AppAuthException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Error: ${e.message}"),
@@ -4018,28 +3964,6 @@ class _PantallaRegistroState extends State<PantallaRegistro> {
             keyboardType: TextInputType.emailAddress,
             validator: (v) =>
                 (v == null || !v.contains('@')) ? 'Correo inválido' : null,
-          ),
-          const SizedBox(height: 16),
-          DropdownButtonFormField<RolUsuario>(
-            initialValue: _rolSeleccionado,
-            isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'Rol',
-              prefixIcon: Icon(Icons.admin_panel_settings_outlined),
-            ),
-            items: RolUsuario.values.map((rol) {
-              return DropdownMenuItem<RolUsuario>(
-                value: rol,
-                child: Text(rol.etiqueta),
-              );
-            }).toList(),
-            onChanged: (rol) {
-              if (rol == null) {
-                return;
-              }
-
-              setState(() => _rolSeleccionado = rol);
-            },
           ),
           const SizedBox(height: 16),
           TextFormField(

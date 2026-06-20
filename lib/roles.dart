@@ -1,12 +1,5 @@
-import 'dart:async';
-
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
-const _firestoreLecturaTimeout = Duration(seconds: 6);
+import 'services/supabase_auth_service.dart';
+import 'services/supabase_rest_service.dart';
 
 enum RolUsuario {
   admin('admin', 'Administrador de empresa'),
@@ -20,26 +13,14 @@ enum RolUsuario {
   static RolUsuario desdeValor(String? valor) {
     return RolUsuario.values.firstWhere(
       (rol) => rol.valor == valor,
-      orElse: () => RolUsuario.admin,
+      orElse: () => RolUsuario.repartidor,
     );
   }
 }
 
-// Conectamos a tu base de datos específica "ruteando"
-FirebaseFirestore get _firestore =>
-    FirebaseFirestore.instanceFor(app: Firebase.app());
-
-String usuarioRolKey({User? user}) {
-  User? usuario;
-  try {
-    usuario = user ?? FirebaseAuth.instance.currentUser;
-  } catch (_) {
-    // Firebase no inicializado en tests de widgets.
-  }
-
-  // Usamos el correo como llave única en la base de datos
-  final identificador = usuario?.email?.toLowerCase().trim() ?? usuario?.uid;
-
+String usuarioRolKey({SupabaseAuthUser? user}) {
+  final usuario = user ?? supabaseAuth.currentUser;
+  final identificador = usuario?.email.toLowerCase().trim() ?? usuario?.uid;
   if (identificador != null && identificador.isNotEmpty) {
     return identificador;
   }
@@ -47,56 +28,35 @@ String usuarioRolKey({User? user}) {
   return 'local';
 }
 
-Future<RolUsuario> cargarRolUsuario({User? user}) async {
-  final identificador = usuarioRolKey(user: user);
-  final prefs = await SharedPreferences.getInstance();
-
-  if (identificador != 'local') {
-    try {
-      // 1. Intentar cargar el rol desde la nube (Firestore)
-      final doc = await _firestore
-          .collection('roles_usuarios')
-          .doc(identificador)
-          .get()
-          .timeout(_firestoreLecturaTimeout);
-      if (doc.exists && doc.data() != null) {
-        final rolString = doc.data()!['rol'] as String?;
-        final rol = RolUsuario.desdeValor(rolString);
-
-        // Actualizar el caché local de respaldo
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('rol_usuario_$identificador', rol.valor);
-
-        return rol;
-      }
-    } catch (e) {
-      debugPrint('Error cargando rol desde Firestore: $e');
-      // Si falla la red, ignoramos el error y tratamos de cargar localmente
-    }
+Future<Map<String, dynamic>?> _cargarRolRow(String identificador) async {
+  if (identificador == 'local' || !supabaseRest.isConfigured) {
+    return null;
   }
 
-  // 2. Si no está en la nube o no hay internet, cargamos el caché local
-  return RolUsuario.desdeValor(prefs.getString('rol_usuario_$identificador'));
+  final rows = await supabaseRest.select(
+    'roles_usuarios',
+    filters: {'id': SupabaseConfig.eq(identificador)},
+    limit: 1,
+  );
+  return rows.isNotEmpty ? rows.first : null;
 }
 
-Future<void> guardarRolUsuario(RolUsuario rol, {User? user}) async {
+Future<RolUsuario> cargarRolUsuario({SupabaseAuthUser? user}) async {
+  final row = await _cargarRolRow(usuarioRolKey(user: user));
+  return RolUsuario.desdeValor(row?['rol']?.toString());
+}
+
+Future<void> guardarRolUsuario(RolUsuario rol, {SupabaseAuthUser? user}) async {
   final identificador = usuarioRolKey(user: user);
-
-  // 1. Guardar localmente (caché)
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setString('rol_usuario_$identificador', rol.valor);
-
-  // 2. Guardar en la nube (Firestore)
-  if (identificador != 'local') {
-    try {
-      await _firestore.collection('roles_usuarios').doc(identificador).set({
-        'rol': rol.valor,
-        'actualizado': DateTime.now().toIso8601String(),
-      }, SetOptions(merge: true));
-    } catch (e) {
-      debugPrint('Error guardando rol en la nube: $e');
-    }
+  if (identificador == 'local') {
+    return;
   }
+
+  await supabaseRest.upsert('roles_usuarios', {
+    'id': identificador,
+    'rol': rol.valor,
+    'actualizado': DateTime.now().toIso8601String(),
+  }, onConflict: 'id');
 }
 
 Future<void> guardarRolUsuarioPorEmail(String email, RolUsuario rol) async {
@@ -105,7 +65,8 @@ Future<void> guardarRolUsuarioPorEmail(String email, RolUsuario rol) async {
     return;
   }
 
-  await _firestore.collection('roles_usuarios').doc(identificador).set({
+  await supabaseRest.upsert('roles_usuarios', {
+    'id': identificador,
     'rol': rol.valor,
     'deshabilitado': false,
     if (rol == RolUsuario.admin) ...{
@@ -113,50 +74,17 @@ Future<void> guardarRolUsuarioPorEmail(String email, RolUsuario rol) async {
       'contrasenaTemporalVisible': '****',
     },
     'actualizado': DateTime.now().toIso8601String(),
-  }, SetOptions(merge: true));
-
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setString('rol_usuario_$identificador', rol.valor);
+  }, onConflict: 'id');
 }
 
-Future<bool> debeCambiarContrasena({User? user}) async {
-  final identificador = usuarioRolKey(user: user);
-
-  if (identificador == 'local') {
-    return false;
-  }
-
-  try {
-    final doc = await _firestore
-        .collection('roles_usuarios')
-        .doc(identificador)
-        .get()
-        .timeout(_firestoreLecturaTimeout);
-    return doc.data()?['debeCambiarContrasena'] == true;
-  } catch (e) {
-    debugPrint('Error consultando cambio de contrasena requerido: $e');
-    return false;
-  }
+Future<bool> debeCambiarContrasena({SupabaseAuthUser? user}) async {
+  final row = await _cargarRolRow(usuarioRolKey(user: user));
+  return row?['debeCambiarContrasena'] == true;
 }
 
-Future<bool> usuarioDeshabilitado({User? user}) async {
-  final identificador = usuarioRolKey(user: user);
-
-  if (identificador == 'local') {
-    return false;
-  }
-
-  try {
-    final doc = await _firestore
-        .collection('roles_usuarios')
-        .doc(identificador)
-        .get()
-        .timeout(_firestoreLecturaTimeout);
-    return doc.data()?['deshabilitado'] == true;
-  } catch (e) {
-    debugPrint('Error consultando estado de usuario: $e');
-    return false;
-  }
+Future<bool> usuarioDeshabilitado({SupabaseAuthUser? user}) async {
+  final row = await _cargarRolRow(usuarioRolKey(user: user));
+  return row?['deshabilitado'] == true;
 }
 
 Future<void> guardarCambioContrasenaRequerido({
@@ -164,14 +92,18 @@ Future<void> guardarCambioContrasenaRequerido({
   required String contrasenaTemporal,
 }) async {
   final identificador = email.toLowerCase().trim();
+  if (identificador.isEmpty) {
+    return;
+  }
 
-  await _firestore.collection('roles_usuarios').doc(identificador).set({
+  await supabaseRest.upsert('roles_usuarios', {
+    'id': identificador,
     'rol': RolUsuario.repartidor.valor,
     'deshabilitado': false,
     'debeCambiarContrasena': true,
     'contrasenaTemporalVisible': contrasenaTemporal,
     'actualizado': DateTime.now().toIso8601String(),
-  }, SetOptions(merge: true));
+  }, onConflict: 'id');
 }
 
 Future<void> deshabilitarUsuarioRepartidor(String email) async {
@@ -180,45 +112,40 @@ Future<void> deshabilitarUsuarioRepartidor(String email) async {
     return;
   }
 
-  await _firestore.collection('roles_usuarios').doc(identificador).set({
+  await supabaseRest.upsert('roles_usuarios', {
+    'id': identificador,
     'rol': RolUsuario.repartidor.valor,
     'deshabilitado': true,
     'debeCambiarContrasena': false,
     'contrasenaTemporalVisible': '****',
     'actualizado': DateTime.now().toIso8601String(),
-  }, SetOptions(merge: true));
+  }, onConflict: 'id');
 }
 
-Future<void> marcarContrasenaCambiada({User? user}) async {
+Future<void> marcarContrasenaCambiada({SupabaseAuthUser? user}) async {
   final identificador = usuarioRolKey(user: user);
-
   if (identificador == 'local') {
     return;
   }
 
-  await _firestore.collection('roles_usuarios').doc(identificador).set({
+  await supabaseRest.upsert('roles_usuarios', {
+    'id': identificador,
     'debeCambiarContrasena': false,
     'contrasenaTemporalVisible': '****',
     'actualizado': DateTime.now().toIso8601String(),
-  }, SetOptions(merge: true));
+  }, onConflict: 'id');
 }
 
 bool puedeAdministrar(RolUsuario rol) => rol == RolUsuario.admin;
 
 String nombreUsuarioActual() {
-  User? user;
-  try {
-    user = FirebaseAuth.instance.currentUser;
-  } catch (_) {
-    // Firebase no inicializado en tests de widgets.
-  }
+  final user = supabaseAuth.currentUser;
   final nombre = user?.displayName?.trim();
-
   if (nombre != null && nombre.isNotEmpty) {
     return nombre;
   }
 
-  final email = user?.email?.trim();
+  final email = user?.email.trim();
   if (email != null && email.isNotEmpty) {
     return email;
   }

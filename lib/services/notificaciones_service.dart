@@ -1,7 +1,5 @@
 import 'dart:async';
 
-import 'package:firebase_core/firebase_core.dart';
-
 import '../models/notificacion_interna.dart';
 import '../models/producto_inventario.dart';
 import '../persistencia_rutas.dart';
@@ -17,10 +15,6 @@ class NotificacionesService {
       _inventarioService ?? InventarioService();
 
   Stream<List<NotificacionInterna>> escucharNotificacionesAdmin() {
-    if (Firebase.apps.isEmpty) {
-      return Stream.fromFuture(cargarNotificacionesAdmin());
-    }
-
     final controller = StreamController<List<NotificacionInterna>>();
     List<Map<String, dynamic>> persistidas = const [];
     List<ProductoInventario> alertasInventario = const [];
@@ -65,10 +59,6 @@ class NotificacionesService {
 
   Future<List<NotificacionInterna>> cargarNotificacionesAdmin() async {
     final persistidas = await cargarNotificacionesInternas();
-    if (Firebase.apps.isEmpty) {
-      return _combinarNotificaciones(persistidas, const []);
-    }
-
     try {
       final alertas = await _inventarioServiceActivo
           .obtenerAlertasStock()
@@ -192,7 +182,7 @@ class NotificacionesService {
         nombreRepartidor: '',
         emailRepartidor: '',
         direccion: producto.nombre,
-        fecha: producto.actualizadoEn?.toDate() ?? DateTime.now(),
+        fecha: producto.actualizadoEn ?? DateTime.now(),
         leida: leidasPorId[id] ?? false,
         tipo: estado,
       );

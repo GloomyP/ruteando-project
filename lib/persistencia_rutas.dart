@@ -1,22 +1,13 @@
 import 'dart:async';
-import 'dart:convert';
-
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'roles.dart';
-
-final FirebaseFirestore _firestore = FirebaseFirestore.instanceFor(
-  app: Firebase.app(),
-);
+import 'services/supabase_auth_service.dart';
+import 'services/supabase_rest_service.dart';
 
 String empresaUsuarioKey() {
   try {
-    final user = FirebaseAuth.instance.currentUser;
-    final identificador = user?.uid ?? user?.email;
+    final user = supabaseAuth.currentUser;
+    final identificador = user?.email.toLowerCase().trim() ?? user?.uid;
 
     if (identificador != null && identificador.trim().isNotEmpty) {
       return 'empresa_vinculada_usuario_$identificador';
@@ -29,16 +20,16 @@ String rutaAsignadaKey(String email) {
   return email.toLowerCase().trim();
 }
 
-String _rutaAsignadaLocalKey(String email) {
-  return 'ruta_asignada_${rutaAsignadaKey(email)}';
-}
-
 String asignacionesGlobalesKey() {
   return empresaUsuarioKey();
 }
 
 String historialRutasTerminadasKey() {
   return 'historial_rutas_terminadas_${asignacionesGlobalesKey()}';
+}
+
+String notificacionRutaKey(String email) {
+  return email.toLowerCase().trim();
 }
 
 Future<String> empresaOperativaKey() async {
@@ -49,45 +40,30 @@ Future<String> empresaOperativaKey() async {
 Future<Set<String>> _empresaKeysCandidatas() async {
   final fallback = empresaUsuarioKey();
   final keys = <String>{};
+  final user = supabaseAuth.currentUser;
+  final email = user?.email.toLowerCase().trim();
+  final uid = user?.uid.trim();
 
-  if (Firebase.apps.isEmpty) {
-    return {fallback};
+  if (email != null && email.isNotEmpty) {
+    final rows = await supabaseRest.select(
+      'usuarios_empresas',
+      filters: {'id': SupabaseConfig.eq(email)},
+      limit: 1,
+    );
+    final empresaKey = rows.isNotEmpty
+        ? (rows.first['empresa_key'] ?? rows.first['empresaKey'])
+              ?.toString()
+              .trim()
+        : null;
+    if (empresaKey != null && empresaKey.isNotEmpty) {
+      keys.add(empresaKey);
+    }
   }
 
-  try {
-    final user = FirebaseAuth.instance.currentUser;
-    final email = user?.email?.toLowerCase().trim();
-    final uid = user?.uid.trim();
-
-    if (email != null && email.isNotEmpty) {
-      final doc = await _firestore
-          .collection('usuarios_empresas')
-          .doc(email)
-          .get();
-      final empresaKey = doc.data()?['empresaKey']?.toString().trim();
-      if (empresaKey != null && empresaKey.isNotEmpty) {
-        keys.add(empresaKey);
-      }
+  for (final identificador in [email, uid].whereType<String>()) {
+    if (identificador.trim().isNotEmpty) {
+      keys.add(identificador.trim());
     }
-
-    final identificadores = [
-      email,
-      uid,
-    ].whereType<String>().where((id) => id.isNotEmpty).toSet();
-
-    for (final identificador in identificadores) {
-      final empresaDoc = await _firestore
-          .collection('empresas_usuarios')
-          .doc(identificador)
-          .get();
-      final rut = empresaDoc.data()?['rut']?.toString().trim();
-      if (rut != null && rut.isNotEmpty) {
-        keys.add(rut);
-      }
-      keys.add(identificador);
-    }
-  } catch (error) {
-    debugPrint('No se pudieron resolver llaves de empresa: $error');
   }
 
   keys.add(fallback);
@@ -96,430 +72,169 @@ Future<Set<String>> _empresaKeysCandidatas() async {
 
 Future<void> vincularUsuarioAEmpresaActual(String email) async {
   final emailNormalizado = email.toLowerCase().trim();
-  if (emailNormalizado.isEmpty || Firebase.apps.isEmpty) {
+  if (emailNormalizado.isEmpty) {
     return;
   }
 
-  await _firestore.collection('usuarios_empresas').doc(emailNormalizado).set({
-    'empresaKey': await empresaOperativaKey(),
+  final empresaKey = await empresaOperativaKey();
+  await supabaseRest.upsert('usuarios_empresas', {
+    'id': emailNormalizado,
+    'empresa_key': empresaKey,
+    'empresaKey': empresaKey,
     'actualizado': DateTime.now().toIso8601String(),
-  }, SetOptions(merge: true));
+  }, onConflict: 'id');
 }
 
-String notificacionRutaKey(String email) {
-  return email.toLowerCase().trim();
-}
-
-String _notificacionRutaLocalKey(String email) {
-  return 'notificacion_ruta_${notificacionRutaKey(email)}';
-}
-
-String _notificacionesInternasLocalKey() {
-  return 'notificaciones_internas_${asignacionesGlobalesKey()}';
-}
-
-// ==========================================
-// RUTAS ASIGNADAS INDIVIDUALES (REPARTIDOR)
-// ==========================================
 Future<Map<String, dynamic>?> cargarRutaAsignada(String email) async {
-  if (kIsWeb) {
-    return _cargarRutaAsignadaLocal(email);
-  }
-
-  try {
-    final doc = await _firestore
-        .collection('rutas_asignadas')
-        .doc(rutaAsignadaKey(email))
-        .get();
-    final data = doc.data();
-    if (data != null) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_rutaAsignadaLocalKey(email), jsonEncode(data));
-      return data;
-    }
-  } catch (_) {}
-
-  return _cargarRutaAsignadaLocal(email);
-}
-
-Future<Map<String, dynamic>?> _cargarRutaAsignadaLocal(String email) async {
-  final prefs = await SharedPreferences.getInstance();
-  final data = prefs.getString(_rutaAsignadaLocalKey(email));
-  if (data == null) {
+  final rows = await supabaseRest.select(
+    'rutas_asignadas',
+    filters: {'id': SupabaseConfig.eq(rutaAsignadaKey(email))},
+    limit: 1,
+  );
+  if (rows.isEmpty) {
     return null;
   }
 
-  final decoded = jsonDecode(data);
-  if (decoded is Map<String, dynamic>) {
-    return decoded;
-  }
-
-  return null;
+  final ruta = rows.first['ruta'];
+  return ruta is Map ? Map<String, dynamic>.from(ruta) : rows.first;
 }
 
 Stream<Map<String, dynamic>?> escucharRutaAsignada(String email) {
-  if (Firebase.apps.isEmpty || kIsWeb) {
-    return Stream.fromFuture(cargarRutaAsignada(email));
-  }
-
-  return _firestore
-      .collection('rutas_asignadas')
-      .doc(rutaAsignadaKey(email))
-      .snapshots()
-      .asyncMap((doc) async {
-        final data = doc.data();
-        if (data != null) {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString(_rutaAsignadaLocalKey(email), jsonEncode(data));
-        }
-        return data;
-      });
+  return Stream.fromFuture(cargarRutaAsignada(email));
 }
 
 Future<void> guardarRutaAsignada(
   String email,
   Map<String, dynamic> ruta,
 ) async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setString(_rutaAsignadaLocalKey(email), jsonEncode(ruta));
-
-  if (Firebase.apps.isEmpty || kIsWeb) {
-    return;
-  }
-
-  try {
-    await _firestore
-        .collection('rutas_asignadas')
-        .doc(rutaAsignadaKey(email))
-        .set(ruta, SetOptions(merge: true));
-  } catch (error) {
-    debugPrint('No se pudo sincronizar la ruta asignada: $error');
-  }
+  await supabaseRest.upsert('rutas_asignadas', {
+    'id': rutaAsignadaKey(email),
+    'email': rutaAsignadaKey(email),
+    'ruta': ruta,
+    'actualizado': DateTime.now().toIso8601String(),
+  }, onConflict: 'id');
 }
 
-// ==========================================
-// NOTIFICACIONES DE RUTAS
-// ==========================================
 Future<Map<String, dynamic>?> cargarNotificacionRuta(String email) async {
-  try {
-    final doc = await _firestore
-        .collection('notificaciones_rutas')
-        .doc(notificacionRutaKey(email))
-        .get();
-    final data = doc.data();
-    if (data != null) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_notificacionRutaLocalKey(email), jsonEncode(data));
-      return data;
-    }
-  } catch (_) {}
-
-  final prefs = await SharedPreferences.getInstance();
-  final data = prefs.getString(_notificacionRutaLocalKey(email));
-  if (data == null) {
+  final rows = await supabaseRest.select(
+    'notificaciones_rutas',
+    filters: {'id': SupabaseConfig.eq(notificacionRutaKey(email))},
+    limit: 1,
+  );
+  if (rows.isEmpty) {
     return null;
   }
 
-  final decoded = jsonDecode(data);
-  if (decoded is Map<String, dynamic>) {
-    return decoded;
-  }
-
-  return null;
+  final notificacion = rows.first['notificacion'];
+  return notificacion is Map
+      ? Map<String, dynamic>.from(notificacion)
+      : rows.first;
 }
 
 Future<void> guardarNotificacionRuta(
   String email,
   Map<String, dynamic> notificacion,
 ) async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setString(
-    _notificacionRutaLocalKey(email),
-    jsonEncode(notificacion),
-  );
-
-  if (Firebase.apps.isEmpty || kIsWeb) {
-    return;
-  }
-
-  try {
-    await _firestore
-        .collection('notificaciones_rutas')
-        .doc(notificacionRutaKey(email))
-        .set(notificacion, SetOptions(merge: true));
-  } catch (error) {
-    debugPrint('No se pudo sincronizar la notificacion de ruta: $error');
-  }
+  await supabaseRest.upsert('notificaciones_rutas', {
+    'id': notificacionRutaKey(email),
+    'email': notificacionRutaKey(email),
+    'notificacion': notificacion,
+    'actualizado': DateTime.now().toIso8601String(),
+  }, onConflict: 'id');
 }
 
 Future<void> marcarNotificacionRutaLeida(String email) async {
   final notificacion = await cargarNotificacionRuta(email);
-  if (notificacion != null) {
-    await guardarNotificacionRuta(email, {
-      ...notificacion,
-      'leida': true,
-      'fechaLectura': DateTime.now().toIso8601String(),
-    });
-  }
-
-  if (Firebase.apps.isEmpty || kIsWeb) {
+  if (notificacion == null) {
     return;
   }
 
-  try {
-    await _firestore
-        .collection('notificaciones_rutas')
-        .doc(notificacionRutaKey(email))
-        .update({
-          'leida': true,
-          'fechaLectura': DateTime.now().toIso8601String(),
-        });
-  } catch (error) {
-    debugPrint('No se pudo sincronizar lectura de notificacion: $error');
-  }
-}
-
-// ==========================================
-// NOTIFICACIONES INTERNAS (ADMINISTRADOR)
-// ==========================================
-Future<List<Map<String, dynamic>>>
-_cargarNotificacionesInternasLocales() async {
-  final prefs = await SharedPreferences.getInstance();
-  final data = prefs.getString(_notificacionesInternasLocalKey());
-  if (data == null) {
-    return [];
-  }
-
-  final decoded = jsonDecode(data);
-  if (decoded is List) {
-    return decoded
-        .whereType<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
-        .toList();
-  }
-
-  return [];
+  await guardarNotificacionRuta(email, {
+    ...notificacion,
+    'leida': true,
+    'fechaLectura': DateTime.now().toIso8601String(),
+  });
 }
 
 Future<List<Map<String, dynamic>>> cargarNotificacionesInternas() async {
-  if (Firebase.apps.isEmpty || kIsWeb) {
-    return _cargarNotificacionesInternasLocales();
-  }
+  final key = await empresaOperativaKey();
+  final rows = await supabaseRest.select(
+    'notificaciones_internas',
+    filters: {'id': SupabaseConfig.eq(key)},
+    limit: 1,
+  );
 
-  try {
-    final key = await empresaOperativaKey();
-    final doc = await _firestore
-        .collection('notificaciones_internas')
-        .doc(key)
-        .get();
-    final data = doc.data();
-    if (data != null && data['lista'] is List) {
-      final notificaciones = (data['lista'] as List)
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-        _notificacionesInternasLocalKey(),
-        jsonEncode(notificaciones),
-      );
-      return notificaciones;
-    }
-  } catch (_) {}
-
-  return _cargarNotificacionesInternasLocales();
+  return _mapearListaDinamica(rows.isNotEmpty ? rows.first['lista'] : null);
 }
 
 Stream<List<Map<String, dynamic>>> escucharNotificacionesInternas() {
-  if (Firebase.apps.isEmpty || kIsWeb) {
-    return Stream.fromFuture(cargarNotificacionesInternas());
-  }
-
-  return Stream.fromFuture(empresaOperativaKey()).asyncExpand((key) {
-    return _firestore
-        .collection('notificaciones_internas')
-        .doc(key)
-        .snapshots()
-        .asyncMap((doc) async {
-          final data = doc.data();
-          if (data != null && data['lista'] is List) {
-            final notificaciones = (data['lista'] as List)
-                .whereType<Map>()
-                .map((e) => Map<String, dynamic>.from(e))
-                .toList();
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.setString(
-              _notificacionesInternasLocalKey(),
-              jsonEncode(notificaciones),
-            );
-            return notificaciones;
-          }
-          return cargarNotificacionesInternas();
-        });
-  });
+  return Stream.fromFuture(cargarNotificacionesInternas());
 }
 
 Future<void> guardarNotificacionesInternas(
   List<Map<String, dynamic>> notificaciones,
 ) async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setString(
-    _notificacionesInternasLocalKey(),
-    jsonEncode(notificaciones),
-  );
-
-  if (Firebase.apps.isEmpty || kIsWeb) {
-    return;
-  }
-
   final key = await empresaOperativaKey();
-  await _firestore.collection('notificaciones_internas').doc(key).set({
+  await supabaseRest.upsert('notificaciones_internas', {
+    'id': key,
     'lista': notificaciones,
-  });
+    'actualizado': DateTime.now().toIso8601String(),
+  }, onConflict: 'id');
 }
 
 Future<void> borrarRutaAsignada(String email) async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.remove(_rutaAsignadaLocalKey(email));
-  await prefs.remove(_notificacionRutaLocalKey(email));
-
-  if (Firebase.apps.isEmpty || kIsWeb) {
-    return;
-  }
-
-  try {
-    await _firestore
-        .collection('rutas_asignadas')
-        .doc(rutaAsignadaKey(email))
-        .delete();
-    await _firestore
-        .collection('notificaciones_rutas')
-        .doc(notificacionRutaKey(email))
-        .delete();
-  } catch (error) {
-    debugPrint('No se pudo sincronizar borrado de ruta asignada: $error');
-  }
+  await supabaseRest.delete(
+    'rutas_asignadas',
+    filters: {'id': SupabaseConfig.eq(rutaAsignadaKey(email))},
+  );
+  await supabaseRest.delete(
+    'notificaciones_rutas',
+    filters: {'id': SupabaseConfig.eq(notificacionRutaKey(email))},
+  );
 }
 
-// ==========================================
-// ASIGNACIONES GLOBALES (ADMINISTRADOR)
-// ==========================================
 Future<List<Map<String, dynamic>>> cargarAsignacionesGlobales() async {
-  if (Firebase.apps.isEmpty || kIsWeb) {
-    return _cargarAsignacionesGlobalesLocales();
-  }
+  final key = await empresaOperativaKey();
+  final rows = await supabaseRest.select(
+    'asignaciones_globales',
+    filters: {'id': SupabaseConfig.eq(key)},
+    limit: 1,
+  );
 
-  try {
-    final key = await empresaOperativaKey();
-    final doc = await _firestore
-        .collection('asignaciones_globales')
-        .doc(key)
-        .get();
-    final data = doc.data();
-    if (data != null && data['lista'] is List) {
-      return (data['lista'] as List)
-          .map((e) => Map<String, dynamic>.from(e as Map))
-          .toList();
-    }
-  } catch (_) {}
-
-  return _cargarAsignacionesGlobalesLocales();
-}
-
-Future<List<Map<String, dynamic>>> _cargarAsignacionesGlobalesLocales() async {
-  final prefs = await SharedPreferences.getInstance();
-  final data = prefs.getString(asignacionesGlobalesKey());
-  if (data == null) {
-    return [];
-  }
-
-  final decoded = jsonDecode(data);
-  if (decoded is List) {
-    return decoded
-        .whereType<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
-        .toList();
-  }
-
-  return [];
+  return _mapearListaDinamica(rows.isNotEmpty ? rows.first['lista'] : null);
 }
 
 Future<void> guardarAsignacionesGlobales(
   List<Map<String, dynamic>> asignaciones,
 ) async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setString(asignacionesGlobalesKey(), jsonEncode(asignaciones));
-
-  if (Firebase.apps.isEmpty || kIsWeb) {
-    return;
-  }
-
   final key = await empresaOperativaKey();
-  try {
-    await _firestore.collection('asignaciones_globales').doc(key).set({
-      'lista': asignaciones,
-    });
-  } catch (error) {
-    debugPrint('No se pudieron sincronizar asignaciones globales: $error');
-  }
+  await supabaseRest.upsert('asignaciones_globales', {
+    'id': key,
+    'lista': asignaciones,
+    'actualizado': DateTime.now().toIso8601String(),
+  }, onConflict: 'id');
 }
 
-// ==========================================
-// HISTORIAL DE RUTAS TERMINADAS
-// ==========================================
 Future<List<Map<String, dynamic>>> cargarHistorialRutasTerminadas() async {
-  try {
-    final key = await empresaOperativaKey();
-    final doc = await _firestore
-        .collection('historial_rutas_terminadas')
-        .doc(key)
-        .get();
-    final data = doc.data();
-    if (data != null && data['lista'] is List) {
-      final historial = (data['lista'] as List)
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-        historialRutasTerminadasKey(),
-        jsonEncode(historial),
-      );
-      return historial;
-    }
-  } catch (_) {}
+  final key = await empresaOperativaKey();
+  final rows = await supabaseRest.select(
+    'historial_rutas_terminadas',
+    filters: {'id': SupabaseConfig.eq(key)},
+    limit: 1,
+  );
 
-  final prefs = await SharedPreferences.getInstance();
-  final data = prefs.getString(historialRutasTerminadasKey());
-  if (data == null) {
-    return [];
-  }
-
-  final decoded = jsonDecode(data);
-  if (decoded is List) {
-    return decoded
-        .whereType<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
-        .toList();
-  }
-
-  return [];
+  return _mapearListaDinamica(rows.isNotEmpty ? rows.first['lista'] : null);
 }
 
 Future<void> guardarHistorialRutasTerminadas(
   List<Map<String, dynamic>> historial,
 ) async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setString(historialRutasTerminadasKey(), jsonEncode(historial));
-
-  if (Firebase.apps.isEmpty) {
-    return;
-  }
-
   final key = await empresaOperativaKey();
-  await _firestore.collection('historial_rutas_terminadas').doc(key).set({
+  await supabaseRest.upsert('historial_rutas_terminadas', {
+    'id': key,
     'lista': historial,
-  });
+    'actualizado': DateTime.now().toIso8601String(),
+  }, onConflict: 'id');
 }
 
 Future<void> registrarRutaTerminada(Map<String, dynamic> ruta) async {
@@ -564,155 +279,59 @@ Future<void> liberarRepartidorDeRutaActiva(String email) async {
   await guardarAsignacionesGlobales(asignaciones);
 }
 
-// ==========================================
-// CONDUCTORES / REPARTIDORES VINCULADOS
-// ==========================================
 String conductoresUsuarioKey() {
   return empresaUsuarioKey();
 }
 
-String _conductoresLocalKey() {
-  return 'conductores_empresas_${conductoresUsuarioKey()}';
-}
-
-Future<List<Map<String, String>>> _cargarConductoresLocales() async {
-  final prefs = await SharedPreferences.getInstance();
-  final data = prefs.getString(_conductoresLocalKey());
-  if (data == null) {
-    return [];
-  }
-
-  final decoded = jsonDecode(data);
-  if (decoded is! List) {
-    return [];
-  }
-
-  return decoded
-      .map((conductor) {
-        if (conductor is Map) {
-          return conductor.map(
-            (key, value) => MapEntry(key.toString(), value.toString()),
-          );
-        }
-        return <String, String>{};
-      })
-      .where((element) => element.isNotEmpty)
-      .toList();
-}
-
-Future<void> _guardarConductoresLocales(
-  List<Map<String, String>> conductores,
-) async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setString(_conductoresLocalKey(), jsonEncode(conductores));
-}
-
 Future<List<Map<String, String>>> cargarConductoresVinculados() async {
-  try {
-    final keys = await _empresaKeysCandidatas();
-    for (final key in keys) {
-      final doc = await _firestore
-          .collection('conductores_empresas')
-          .doc(key)
-          .get();
-      final data = doc.data();
-      final conductores = _mapearConductores(data?['lista']);
-      if (conductores.isNotEmpty) {
-        await _guardarConductoresLocales(conductores);
-        return conductores;
-      }
+  final keys = await _empresaKeysCandidatas();
+  for (final key in keys) {
+    final rows = await supabaseRest.select(
+      'conductores_empresas',
+      filters: {'id': SupabaseConfig.eq(key)},
+      limit: 1,
+    );
+    final conductores = rows.isNotEmpty
+        ? _mapearConductores(rows.first['lista'])
+        : const <Map<String, String>>[];
+    if (conductores.isNotEmpty) {
+      return conductores;
     }
-
-    final snapshot = await _firestore.collection('conductores_empresas').get();
-    final todos = <Map<String, String>>[];
-    final correosVistos = <String>{};
-    for (final doc in snapshot.docs) {
-      final conductores = _mapearConductores(doc.data()['lista']);
-      for (final conductor in conductores) {
-        final correo = conductor['correo']?.toLowerCase().trim() ?? '';
-        final llave = correo.isNotEmpty
-            ? correo
-            : '${conductor['rut'] ?? ''}_${conductor['nombre'] ?? ''}';
-        if (llave.isEmpty || correosVistos.contains(llave)) {
-          continue;
-        }
-        correosVistos.add(llave);
-        todos.add(conductor);
-      }
-    }
-    if (todos.isNotEmpty) {
-      await _guardarConductoresLocales(todos);
-      return todos;
-    }
-
-    final usuarios = await _cargarRepartidoresDesdeColeccionesUsuarios();
-    if (usuarios.isNotEmpty) {
-      await _guardarConductoresLocales(usuarios);
-      return usuarios;
-    }
-  } catch (error) {
-    debugPrint('No se pudieron cargar repartidores desde Firestore: $error');
   }
-  return _cargarConductoresLocales();
+
+  return _cargarRepartidoresDesdeSupabase();
 }
 
-Future<List<Map<String, String>>>
-_cargarRepartidoresDesdeColeccionesUsuarios() async {
-  const colecciones = ['usuarios', 'users', 'repartidores', 'conductores'];
+Future<List<Map<String, String>>> _cargarRepartidoresDesdeSupabase() async {
   final repartidores = <Map<String, String>>[];
   final vistos = <String>{};
+  final roles = await supabaseRest.select(
+    'roles_usuarios',
+    filters: {'rol': SupabaseConfig.eq(RolUsuario.repartidor.valor)},
+  );
 
-  for (final coleccion in colecciones) {
-    final snapshot = await _firestore.collection(coleccion).get();
-    final esColeccionGenerica = coleccion == 'usuarios' || coleccion == 'users';
-
-    for (final doc in snapshot.docs) {
-      final data = doc.data();
-      final rol = (data['rol'] ?? data['role'] ?? data['tipo'] ?? '')
-          .toString()
-          .toLowerCase()
-          .trim();
-      if (esColeccionGenerica &&
-          rol.isNotEmpty &&
-          rol != RolUsuario.repartidor.valor) {
-        continue;
-      }
-
-      final email = (data['correo'] ?? data['email'] ?? data['mail'] ?? '')
-          .toString();
-      final correo = email.trim().isNotEmpty
-          ? email.toLowerCase().trim()
-          : (doc.id.contains('@') ? doc.id.toLowerCase().trim() : '');
-      final nombre =
-          (data['nombre'] ??
-                  data['name'] ??
-                  data['displayName'] ??
-                  data['nombreCompleto'] ??
-                  correo)
-              .toString()
-              .trim();
-      final rut = (data['rut'] ?? data['run'] ?? data['dni'] ?? '')
-          .toString()
-          .trim();
-      final telefono =
-          (data['telefono'] ?? data['phone'] ?? data['celular'] ?? '')
-              .toString()
-              .trim();
-
-      final llave = correo.isNotEmpty ? correo : '${doc.id}_$nombre';
-      if (llave.trim().isEmpty || vistos.contains(llave)) {
-        continue;
-      }
-
-      vistos.add(llave);
-      repartidores.add({
-        'nombre': nombre.isNotEmpty ? nombre : 'Repartidor',
-        'rut': rut,
-        'correo': correo,
-        'telefono': telefono,
-        'rol': RolUsuario.repartidor.valor,
-      });
+  for (final rol in roles) {
+    final correo = rol['id']?.toString().toLowerCase().trim() ?? '';
+    if (correo.isEmpty || vistos.contains(correo)) {
+      continue;
     }
+
+    final perfiles = await supabaseRest.select(
+      'perfiles_usuarios',
+      filters: {'id': SupabaseConfig.eq(correo)},
+      limit: 1,
+    );
+    final perfil = perfiles.isNotEmpty ? perfiles.first : rol;
+    final nombre = (perfil['nombre'] ?? correo).toString().trim();
+
+    vistos.add(correo);
+    repartidores.add({
+      'nombre': nombre.isNotEmpty ? nombre : 'Repartidor',
+      'rut': perfil['rut']?.toString().trim() ?? '',
+      'correo': correo,
+      'telefono': perfil['telefono']?.toString().trim() ?? '',
+      'rol': RolUsuario.repartidor.valor,
+    });
   }
 
   return repartidores;
@@ -724,15 +343,24 @@ List<Map<String, String>> _mapearConductores(dynamic lista) {
   }
 
   return lista
-      .map((conductor) {
-        if (conductor is Map) {
-          return conductor.map(
-            (key, value) => MapEntry(key.toString(), value.toString()),
-          );
-        }
-        return <String, String>{};
-      })
+      .whereType<Map>()
+      .map(
+        (conductor) => conductor.map(
+          (key, value) => MapEntry(key.toString(), value.toString()),
+        ),
+      )
       .where((element) => element.isNotEmpty)
+      .toList();
+}
+
+List<Map<String, dynamic>> _mapearListaDinamica(dynamic lista) {
+  if (lista is! List) {
+    return [];
+  }
+
+  return lista
+      .whereType<Map>()
+      .map((item) => Map<String, dynamic>.from(item))
       .toList();
 }
 
@@ -748,16 +376,12 @@ bool esConductorRepartidor(Map<String, String> conductor) {
 Future<void> guardarConductoresVinculados(
   List<Map<String, String>> conductores,
 ) async {
-  await _guardarConductoresLocales(conductores);
-
   final key = await empresaOperativaKey();
-  try {
-    await _firestore.collection('conductores_empresas').doc(key).set({
-      'lista': conductores,
-    });
-  } catch (error) {
-    debugPrint('No se pudieron sincronizar repartidores con Firestore: $error');
-  }
+  await supabaseRest.upsert('conductores_empresas', {
+    'id': key,
+    'lista': conductores,
+    'actualizado': DateTime.now().toIso8601String(),
+  }, onConflict: 'id');
 }
 
 Future<void> eliminarRepartidorDeSistema(String email) async {
@@ -768,61 +392,31 @@ Future<void> eliminarRepartidorDeSistema(String email) async {
 
   await borrarRutaAsignada(emailNormalizado);
 
-  final conductoresSnapshot = await _firestore
-      .collection('conductores_empresas')
-      .get();
-  for (final doc in conductoresSnapshot.docs) {
-    final data = doc.data();
-    final lista = data['lista'];
-    if (lista is! List) {
-      continue;
-    }
+  final conductores = await cargarConductoresVinculados();
+  conductores.removeWhere((conductor) {
+    final correo = conductor['correo']?.toLowerCase().trim();
+    return correo == emailNormalizado;
+  });
+  await guardarConductoresVinculados(conductores);
 
-    final conductores = lista.where((conductor) {
-      if (conductor is! Map) {
-        return true;
-      }
+  final asignaciones = await cargarAsignacionesGlobales();
+  asignaciones.removeWhere((asignacion) {
+    final correo = asignacion['repartidorEmail']
+        ?.toString()
+        .toLowerCase()
+        .trim();
+    return correo == emailNormalizado;
+  });
+  await guardarAsignacionesGlobales(asignaciones);
 
-      final correo = conductor['correo']?.toString().toLowerCase().trim();
-      return correo != emailNormalizado;
-    }).toList();
-
-    if (conductores.length != lista.length) {
-      await doc.reference.set({'lista': conductores}, SetOptions(merge: true));
-    }
-  }
-
-  final asignacionesSnapshot = await _firestore
-      .collection('asignaciones_globales')
-      .get();
-  for (final doc in asignacionesSnapshot.docs) {
-    final data = doc.data();
-    final lista = data['lista'];
-    if (lista is! List) {
-      continue;
-    }
-
-    final asignaciones = lista.where((asignacion) {
-      if (asignacion is! Map) {
-        return true;
-      }
-
-      final correo = asignacion['repartidorEmail']
-          ?.toString()
-          .toLowerCase()
-          .trim();
-      return correo != emailNormalizado;
-    }).toList();
-
-    if (asignaciones.length != lista.length) {
-      await doc.reference.set({'lista': asignaciones}, SetOptions(merge: true));
-    }
-  }
-
-  await _firestore
-      .collection('perfiles_usuarios')
-      .doc(emailNormalizado)
-      .delete();
+  await supabaseRest.delete(
+    'perfiles_usuarios',
+    filters: {'id': SupabaseConfig.eq(emailNormalizado)},
+  );
+  await supabaseRest.delete(
+    'roles_usuarios',
+    filters: {'id': SupabaseConfig.eq(emailNormalizado)},
+  );
 }
 
 Future<Map<String, String>?> buscarConductorPorEmail(String email) async {
@@ -831,28 +425,11 @@ Future<Map<String, String>?> buscarConductorPorEmail(String email) async {
     return null;
   }
 
-  final conductoresSnapshot = await _firestore
-      .collection('conductores_empresas')
-      .get();
-  for (final doc in conductoresSnapshot.docs) {
-    final data = doc.data();
-    final lista = data['lista'];
-    if (lista is! List) {
-      continue;
-    }
-
-    for (final conductor in lista) {
-      if (conductor is! Map) {
-        continue;
-      }
-
-      final mutable = conductor.map(
-        (key, value) => MapEntry(key.toString(), value.toString()),
-      );
-      final correo = mutable['correo']?.toLowerCase().trim();
-      if (correo == emailNormalizado) {
-        return mutable;
-      }
+  final conductores = await cargarConductoresVinculados();
+  for (final conductor in conductores) {
+    final correo = conductor['correo']?.toLowerCase().trim();
+    if (correo == emailNormalizado) {
+      return conductor;
     }
   }
 
@@ -869,75 +446,50 @@ Future<void> actualizarDatosRepartidorEnSistema({
     return;
   }
 
-  final conductoresSnapshot = await _firestore
-      .collection('conductores_empresas')
-      .get();
-  for (final doc in conductoresSnapshot.docs) {
-    final data = doc.data();
-    final lista = data['lista'];
-    if (lista is! List) {
-      continue;
+  final conductores = await cargarConductoresVinculados();
+  var conductoresActualizados = false;
+  final nuevosConductores = conductores.map((conductor) {
+    final mutable = Map<String, String>.from(conductor);
+    final correo = mutable['correo']?.toLowerCase().trim();
+    if (correo == emailNormalizado) {
+      mutable['nombre'] = nombre;
+      mutable['telefono'] = telefono;
+      conductoresActualizados = true;
     }
-
-    var actualizado = false;
-    final conductores = lista.map((conductor) {
-      if (conductor is! Map) {
-        return conductor;
-      }
-
-      final mutable = Map<String, dynamic>.from(conductor);
-      final correo = mutable['correo']?.toString().toLowerCase().trim();
-      if (correo == emailNormalizado) {
-        mutable['nombre'] = nombre;
-        mutable['telefono'] = telefono;
-        actualizado = true;
-      }
-      return mutable;
-    }).toList();
-
-    if (actualizado) {
-      await doc.reference.set({'lista': conductores}, SetOptions(merge: true));
-    }
+    return mutable;
+  }).toList();
+  if (conductoresActualizados) {
+    await guardarConductoresVinculados(nuevosConductores);
   }
 
-  final rutaDoc = _firestore
-      .collection('rutas_asignadas')
-      .doc(rutaAsignadaKey(email));
-  final rutaSnapshot = await rutaDoc.get();
-  if (rutaSnapshot.exists) {
-    await rutaDoc.set({'repartidorNombre': nombre}, SetOptions(merge: true));
+  await supabaseRest.upsert('perfiles_usuarios', {
+    'id': emailNormalizado,
+    'email': emailNormalizado,
+    if (nombre.trim().isNotEmpty) 'nombre': nombre.trim(),
+    'telefono': telefono.trim(),
+    'actualizado': DateTime.now().toIso8601String(),
+  }, onConflict: 'id');
+
+  final ruta = await cargarRutaAsignada(emailNormalizado);
+  if (ruta != null) {
+    await guardarRutaAsignada(emailNormalizado, {
+      ...ruta,
+      'repartidorNombre': nombre,
+    });
   }
 
-  final asignacionesSnapshot = await _firestore
-      .collection('asignaciones_globales')
-      .get();
-  for (final doc in asignacionesSnapshot.docs) {
-    final data = doc.data();
-    final lista = data['lista'];
-    if (lista is! List) {
-      continue;
+  final asignaciones = await cargarAsignacionesGlobales();
+  var asignacionesActualizadas = false;
+  final nuevasAsignaciones = asignaciones.map((asignacion) {
+    final mutable = Map<String, dynamic>.from(asignacion);
+    final correo = mutable['repartidorEmail']?.toString().toLowerCase().trim();
+    if (correo == emailNormalizado) {
+      mutable['repartidorNombre'] = nombre;
+      asignacionesActualizadas = true;
     }
-
-    var actualizado = false;
-    final asignaciones = lista.map((asignacion) {
-      if (asignacion is! Map) {
-        return asignacion;
-      }
-
-      final mutable = Map<String, dynamic>.from(asignacion);
-      final correo = mutable['repartidorEmail']
-          ?.toString()
-          .toLowerCase()
-          .trim();
-      if (correo == emailNormalizado) {
-        mutable['repartidorNombre'] = nombre;
-        actualizado = true;
-      }
-      return mutable;
-    }).toList();
-
-    if (actualizado) {
-      await doc.reference.set({'lista': asignaciones}, SetOptions(merge: true));
-    }
+    return mutable;
+  }).toList();
+  if (asignacionesActualizadas) {
+    await guardarAsignacionesGlobales(nuevasAsignaciones);
   }
 }

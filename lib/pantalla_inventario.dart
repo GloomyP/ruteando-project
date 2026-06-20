@@ -39,9 +39,9 @@ class _PantallaInventarioState extends State<PantallaInventario> {
 
   String _mensajeErrorAmigable(Object error) {
     final texto = error.toString();
-    if (texto.contains('cloud_firestore') ||
+    if (texto.contains('Supabase') ||
         texto.contains('Unable to establish connection on channel')) {
-      return 'No se pudo conectar con la base de datos. Se guardara localmente si estas probando en este equipo.';
+      return 'No se pudo conectar con Supabase. Revisa la conexion y permisos de la base de datos.';
     }
 
     return texto;
@@ -1320,7 +1320,7 @@ class _MovimientoInventarioCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = _colorMovimiento(movimiento.tipo);
-    final fecha = _formatearFecha(movimiento.fecha?.toDate());
+    final fecha = _formatearFecha(movimiento.fecha);
     final observacion = movimiento.observacion.trim();
 
     return Card(

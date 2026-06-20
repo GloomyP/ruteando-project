@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 class MovimientoInventario {
   const MovimientoInventario({
     required this.id,
@@ -21,15 +19,11 @@ class MovimientoInventario {
   final String responsable;
   final String email;
   final String observacion;
-  final Timestamp? fecha;
+  final DateTime? fecha;
 
-  factory MovimientoInventario.fromFirestore(
-    DocumentSnapshot<Map<String, dynamic>> doc,
-  ) {
-    final data = doc.data() ?? <String, dynamic>{};
-
+  factory MovimientoInventario.fromMap(Map<String, dynamic> data) {
     return MovimientoInventario(
-      id: data['id']?.toString() ?? doc.id,
+      id: data['id']?.toString() ?? '',
       productoId: data['productoId']?.toString() ?? '',
       productoNombre: data['productoNombre']?.toString() ?? '',
       tipo: data['tipo']?.toString() ?? '',
@@ -37,11 +31,11 @@ class MovimientoInventario {
       responsable: data['responsable']?.toString() ?? '',
       email: data['email']?.toString() ?? '',
       observacion: data['observacion']?.toString() ?? '',
-      fecha: data['fecha'] is Timestamp ? data['fecha'] as Timestamp : null,
+      fecha: _leerFecha(data['fecha']),
     );
   }
 
-  Map<String, dynamic> toFirestore() {
+  Map<String, dynamic> toMap() {
     return {
       'id': id,
       'productoId': productoId,
@@ -51,7 +45,7 @@ class MovimientoInventario {
       'responsable': responsable,
       'email': email,
       'observacion': observacion,
-      'fecha': fecha,
+      'fecha': fecha?.toIso8601String(),
     };
   }
 
@@ -65,5 +59,13 @@ class MovimientoInventario {
     }
 
     return int.tryParse(valor?.toString() ?? '') ?? 0;
+  }
+
+  static DateTime? _leerFecha(dynamic valor) {
+    if (valor is DateTime) {
+      return valor;
+    }
+
+    return DateTime.tryParse(valor?.toString() ?? '');
   }
 }
