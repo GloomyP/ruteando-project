@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'cierre_sesion.dart';
 import 'roles.dart';
 import 'web_focus_helper.dart'
     if (dart.library.html) 'web_focus_helper_web.dart';
@@ -131,12 +130,6 @@ class AppMenuDrawer extends StatelessWidget {
                   ),
                 ],
                 const Spacer(),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.logout),
-                  title: const Text('Cerrar sesion'),
-                  onTap: () => confirmarYCerrarSesion(context),
-                ),
               ],
             );
           },

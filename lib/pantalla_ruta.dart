@@ -4,7 +4,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-import 'cierre_sesion.dart';
 import 'directions_service.dart'
     if (dart.library.js) 'directions_service_web.dart';
 import 'location_service.dart' if (dart.library.js) 'location_service_web.dart';
@@ -67,10 +66,6 @@ class _PantallaRutaState extends State<PantallaRuta> {
 
   Set<Polyline> _polylines = {};
   Set<Marker> _markers = {};
-
-  Future<void> _cerrarSesion(BuildContext context) async {
-    await confirmarYCerrarSesion(context);
-  }
 
   Future<void> _abrirPantalla(BuildContext context, String ruta) async {
     liberarFocoPlataforma();
@@ -712,12 +707,6 @@ class _PantallaRutaState extends State<PantallaRuta> {
                     ),
                   ],
                   const Spacer(),
-                  const Divider(height: 1),
-                  ListTile(
-                    leading: const Icon(Icons.logout),
-                    title: const Text('Cerrar sesión'),
-                    onTap: () => _cerrarSesion(context),
-                  ),
                 ],
               );
             },

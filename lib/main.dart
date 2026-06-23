@@ -662,10 +662,6 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
     });
   }
 
-  Future<void> _cerrarSesion(BuildContext context) async {
-    await confirmarYCerrarSesion(context, mensaje: 'Quieres cerrar tu sesion?');
-  }
-
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
@@ -776,12 +772,6 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                 onTap: () => _abrirRegistroEmpresa(context),
               ),
               const Spacer(),
-              const Divider(height: 1),
-              ListTile(
-                leading: const Icon(Icons.logout),
-                title: const Text('Cerrar sesión'),
-                onTap: () => _cerrarSesion(context),
-              ),
             ],
           ),
         ),
