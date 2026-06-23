@@ -902,9 +902,7 @@ class _PantallaInventarioState extends State<PantallaInventario> {
   }
 }
 
-enum _VistaProductos { lista, cuadricula }
-
-class _InventarioContenido extends StatefulWidget {
+class _InventarioContenido extends StatelessWidget {
   const _InventarioContenido({
     required this.productos,
     required this.stockRepartidores,
@@ -930,53 +928,46 @@ class _InventarioContenido extends StatefulWidget {
   final VoidCallback onRegistrarMovimiento;
 
   @override
-  State<_InventarioContenido> createState() => _InventarioContenidoState();
-}
-
-class _InventarioContenidoState extends State<_InventarioContenido> {
-  _VistaProductos _vistaProductos = _VistaProductos.lista;
-
-  @override
   Widget build(BuildContext context) {
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
       children: [
-        _ResumenInventario(productos: widget.productos),
+        _ResumenInventario(productos: productos),
         const SizedBox(height: 16),
         _AccionesInventario(
-          onCrearProducto: widget.onCrearProducto,
-          onGuardarStock: () => widget.onGuardarStock(null),
-          onRegistrarMovimiento: widget.onRegistrarMovimiento,
+          onCrearProducto: onCrearProducto,
+          onGuardarStock: () => onGuardarStock(null),
+          onRegistrarMovimiento: onRegistrarMovimiento,
         ),
         const SizedBox(height: 20),
         _TituloSeccion(
           titulo: 'Stock por repartidor',
           accion: FilledButton.icon(
-            onPressed: () => widget.onGuardarStock(null),
+            onPressed: () => onGuardarStock(null),
             icon: const Icon(Icons.add),
             label: const Text('Stock'),
             style: FilledButton.styleFrom(backgroundColor: Colors.green[800]),
           ),
         ),
         const SizedBox(height: 12),
-        if (widget.cargandoStock)
+        if (cargandoStock)
           const Center(
             child: Padding(
               padding: EdgeInsets.all(24),
               child: CircularProgressIndicator(),
             ),
           )
-        else if (widget.stockRepartidores.isEmpty)
+        else if (stockRepartidores.isEmpty)
           const _EstadoVacio(
             icon: Icons.local_shipping_outlined,
             mensaje: 'No hay stock registrado por repartidor',
           )
         else
-          ...widget.stockRepartidores.map(
+          ...stockRepartidores.map(
             (stock) => _StockRepartidorCard(
               stock: stock,
-              onEditar: () => widget.onGuardarStock(stock),
+              onEditar: () => onGuardarStock(stock),
             ),
           ),
         const SizedBox(height: 20),
@@ -985,27 +976,27 @@ class _InventarioContenidoState extends State<_InventarioContenido> {
         _TituloSeccion(
           titulo: 'Historial de movimientos',
           accion: FilledButton.icon(
-            onPressed: widget.onRegistrarMovimiento,
+            onPressed: onRegistrarMovimiento,
             icon: const Icon(Icons.add_task_outlined),
             label: const Text('Movimiento'),
             style: FilledButton.styleFrom(backgroundColor: Colors.green[800]),
           ),
         ),
         const SizedBox(height: 12),
-        if (widget.cargandoMovimientos)
+        if (cargandoMovimientos)
           const Center(
             child: Padding(
               padding: EdgeInsets.all(24),
               child: CircularProgressIndicator(),
             ),
           )
-        else if (widget.movimientos.isEmpty)
+        else if (movimientos.isEmpty)
           const _EstadoVacio(
             icon: Icons.swap_horiz,
             mensaje: 'No hay movimientos registrados',
           )
         else
-          ...widget.movimientos.map(
+          ...movimientos.map(
             (movimiento) => _MovimientoInventarioCard(movimiento: movimiento),
           ),
       ],
@@ -1016,72 +1007,25 @@ class _InventarioContenidoState extends State<_InventarioContenido> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _TituloSeccion(
-          titulo: 'Productos',
-          accion: SegmentedButton<_VistaProductos>(
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment<_VistaProductos>(
-                value: _VistaProductos.lista,
-                icon: Icon(Icons.view_list_outlined),
-                tooltip: 'Ver como lista',
-              ),
-              ButtonSegment<_VistaProductos>(
-                value: _VistaProductos.cuadricula,
-                icon: Icon(Icons.grid_view_outlined),
-                tooltip: 'Ver como cuadricula',
-              ),
-            ],
-            selected: {_vistaProductos},
-            onSelectionChanged: (seleccion) {
-              setState(() => _vistaProductos = seleccion.first);
-            },
-          ),
+        Text(
+          'Productos',
+          style: Theme.of(
+            context,
+          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
-        if (widget.productos.isEmpty)
+        if (productos.isEmpty)
           const _EstadoVacio(
             icon: Icons.inventory_2_outlined,
             mensaje: 'No hay productos registrados',
           )
-        else if (_vistaProductos == _VistaProductos.lista)
-          ...widget.productos.map(
+        else
+          ...productos.map(
             (producto) => _ProductoInventarioCard(
               producto: producto,
-              onEditar: () => widget.onEditar(producto),
-              onEliminar: () => widget.onEliminar(producto),
+              onEditar: () => onEditar(producto),
+              onEliminar: () => onEliminar(producto),
             ),
-          )
-        else
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final columnas = constraints.maxWidth >= 860
-                  ? 3
-                  : constraints.maxWidth >= 560
-                  ? 2
-                  : 1;
-
-              return GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: widget.productos.length,
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: columnas,
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  mainAxisExtent: 238,
-                ),
-                itemBuilder: (context, index) {
-                  final producto = widget.productos[index];
-                  return _ProductoInventarioCard(
-                    producto: producto,
-                    onEditar: () => widget.onEditar(producto),
-                    onEliminar: () => widget.onEliminar(producto),
-                    compacto: true,
-                  );
-                },
-              );
-            },
           ),
       ],
     );
@@ -1483,13 +1427,11 @@ class _ProductoInventarioCard extends StatelessWidget {
     required this.producto,
     required this.onEditar,
     required this.onEliminar,
-    this.compacto = false,
   });
 
   final ProductoInventario producto;
   final VoidCallback onEditar;
   final VoidCallback onEliminar;
-  final bool compacto;
 
   @override
   Widget build(BuildContext context) {
@@ -1497,7 +1439,7 @@ class _ProductoInventarioCard extends StatelessWidget {
     final colorEstado = _colorEstado(estado);
 
     return Card(
-      margin: compacto ? EdgeInsets.zero : const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 12),
       elevation: 2,
       color: Theme.of(context).cardTheme.color,
       surfaceTintColor: Colors.transparent,
@@ -1506,7 +1448,7 @@ class _ProductoInventarioCard extends StatelessWidget {
         side: const BorderSide(color: Color(0xFF111111), width: 0.6),
       ),
       child: Padding(
-        padding: EdgeInsets.all(compacto ? 14 : 16),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1525,7 +1467,7 @@ class _ProductoInventarioCard extends StatelessWidget {
                     children: [
                       Text(
                         producto.nombre,
-                        maxLines: compacto ? 1 : 2,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 16,
@@ -1537,7 +1479,7 @@ class _ProductoInventarioCard extends StatelessWidget {
                         producto.descripcion.trim().isEmpty
                             ? 'Sin descripcion'
                             : producto.descripcion,
-                        maxLines: compacto ? 2 : 2,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(color: Colors.grey[700]),
                       ),
@@ -1574,7 +1516,7 @@ class _ProductoInventarioCard extends StatelessWidget {
                 ),
               ],
             ),
-            SizedBox(height: compacto ? 12 : 14),
+            const SizedBox(height: 14),
             Wrap(
               spacing: 8,
               runSpacing: 8,

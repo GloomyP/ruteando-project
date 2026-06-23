@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'cierre_sesion.dart';
 import 'roles.dart';
 import 'persistencia_rutas.dart';
 import 'widgets/campana_notificaciones_admin.dart';
@@ -705,10 +704,6 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
     Navigator.of(context).pushReplacementNamed(ruta);
   }
 
-  Future<void> _cerrarSesion(BuildContext context) async {
-    await confirmarYCerrarSesion(context);
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -809,12 +804,6 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
                     ),
                   ],
                   const Spacer(),
-                  const Divider(height: 1),
-                  ListTile(
-                    leading: const Icon(Icons.logout),
-                    title: const Text('Cerrar sesión'),
-                    onTap: () => _cerrarSesion(context),
-                  ),
                 ],
               );
             },
