@@ -17,6 +17,8 @@ import 'services/supabase_auth_compat.dart';
 import 'services/supabase_rest_service.dart';
 import 'widgets/campana_notificaciones_admin.dart';
 import 'widgets/menu_perfil_appbar.dart';
+import 'web_focus_helper.dart'
+    if (dart.library.html) 'web_focus_helper_web.dart';
 import 'dart:ui' as ui;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'cierre_sesion.dart';
@@ -255,6 +257,7 @@ class _RuteandoAppState extends State<RuteandoApp> {
       themeMode: settings.themeMode,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
+        fontFamily: 'NotoSans',
         scaffoldBackgroundColor: Colors.transparent,
         useMaterial3: true,
         cardTheme: const CardThemeData(
@@ -307,6 +310,7 @@ class _RuteandoAppState extends State<RuteandoApp> {
           seedColor: Colors.green,
           brightness: Brightness.dark,
         ),
+        fontFamily: 'NotoSans',
         scaffoldBackgroundColor: Colors.transparent,
         useMaterial3: true,
         cardTheme: const CardThemeData(
@@ -618,6 +622,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
   }
 
   void _abrirConductores(BuildContext context) {
+    liberarFocoPlataforma();
     Navigator.pop(context);
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -628,6 +633,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
   }
 
   void _abrirRutas(BuildContext context) {
+    liberarFocoPlataforma();
     Navigator.pop(context);
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -638,6 +644,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
   }
 
   Future<void> _abrirRegistroEmpresa(BuildContext context) async {
+    liberarFocoPlataforma();
     Navigator.pop(context);
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -663,6 +670,11 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return Scaffold(
+      onDrawerChanged: (isOpened) {
+        if (isOpened) {
+          liberarFocoPlataforma();
+        }
+      },
       appBar: AppBar(
         title: const Text('Ruteando'),
         backgroundColor: Colors.green[800],
@@ -705,6 +717,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                 leading: const Icon(Icons.home_outlined),
                 title: const Text('Inicio'),
                 onTap: () {
+                  liberarFocoPlataforma();
                   Navigator.pop(context);
                 },
               ),
@@ -715,8 +728,9 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
               ),
               ListTile(
                 leading: const Icon(Icons.assignment_outlined),
-                title: const Text('Asignación de Ruta'),
+                title: const Text('Asignacion de Ruta'),
                 onTap: () {
+                  liberarFocoPlataforma();
                   Navigator.pop(context);
                   Navigator.of(context).push(
                     MaterialPageRoute<void>(
@@ -730,6 +744,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                 leading: const Icon(Icons.monitor_heart_outlined),
                 title: const Text('Monitoreo de Entregas'),
                 onTap: () {
+                  liberarFocoPlataforma();
                   Navigator.pop(context);
                   Navigator.of(context).push(
                     MaterialPageRoute<void>(
@@ -750,6 +765,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                 leading: const Icon(Icons.inventory_2_outlined),
                 title: const Text('Inventario'),
                 onTap: () {
+                  liberarFocoPlataforma();
                   Navigator.pop(context);
                   Navigator.of(context).pushReplacementNamed('/inventario');
                 },

@@ -12,6 +12,8 @@ import 'roles.dart';
 import 'persistencia_rutas.dart';
 import 'widgets/campana_notificaciones_admin.dart';
 import 'widgets/menu_perfil_appbar.dart';
+import 'web_focus_helper.dart'
+    if (dart.library.html) 'web_focus_helper_web.dart';
 
 typedef _ParadaRuta = ({int id, String texto});
 typedef _RutaCandidata = ({
@@ -71,6 +73,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
   }
 
   Future<void> _abrirPantalla(BuildContext context, String ruta) async {
+    liberarFocoPlataforma();
     Navigator.pop(context);
 
     if (ruta == '/rutas') {
@@ -607,6 +610,11 @@ class _PantallaRutaState extends State<PantallaRuta> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      onDrawerChanged: (isOpened) {
+        if (isOpened) {
+          liberarFocoPlataforma();
+        }
+      },
       appBar: AppBar(
         title: const Text('Ruta Optimizada'),
         backgroundColor: Colors.green[800],
