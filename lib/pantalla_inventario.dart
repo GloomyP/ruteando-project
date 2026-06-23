@@ -9,6 +9,10 @@ import 'services/inventario_service.dart';
 import 'widgets/campana_notificaciones_admin.dart';
 import 'widgets/menu_perfil_appbar.dart';
 
+const String _categoriaTodas = 'Todas';
+const String _ordenNombre = 'Nombre';
+const String _ordenCategoria = 'Categoria';
+
 class PantallaInventario extends StatefulWidget {
   const PantallaInventario({super.key});
 
@@ -131,6 +135,7 @@ class _PantallaInventarioState extends State<PantallaInventario> {
                           productos: productos,
                           stockRepartidores: stockRepartidores,
                           movimientos: movimientos,
+                          categorias: _categorias,
                           cargandoStock:
                               stockSnapshot.connectionState ==
                               ConnectionState.waiting,
@@ -907,6 +912,7 @@ class _InventarioContenido extends StatelessWidget {
     required this.productos,
     required this.stockRepartidores,
     required this.movimientos,
+    required this.categorias,
     required this.cargandoStock,
     required this.cargandoMovimientos,
     required this.onCrearProducto,
@@ -919,6 +925,7 @@ class _InventarioContenido extends StatelessWidget {
   final List<ProductoInventario> productos;
   final List<StockRepartidorInventario> stockRepartidores;
   final List<MovimientoInventario> movimientos;
+  final List<String> categorias;
   final bool cargandoStock;
   final bool cargandoMovimientos;
   final VoidCallback onCrearProducto;
@@ -971,7 +978,12 @@ class _InventarioContenido extends StatelessWidget {
             ),
           ),
         const SizedBox(height: 20),
-        _buildProductos(context),
+        _ProductosInventarioSection(
+          productos: productos,
+          categorias: categorias,
+          onEditar: onEditar,
+          onEliminar: onEliminar,
+        ),
         const SizedBox(height: 20),
         _TituloSeccion(
           titulo: 'Historial de movimientos',
@@ -1002,31 +1014,236 @@ class _InventarioContenido extends StatelessWidget {
       ],
     );
   }
+}
 
-  Widget _buildProductos(BuildContext context) {
+class _ProductosInventarioSection extends StatefulWidget {
+  const _ProductosInventarioSection({
+    required this.productos,
+    required this.categorias,
+    required this.onEditar,
+    required this.onEliminar,
+  });
+
+  final List<ProductoInventario> productos;
+  final List<String> categorias;
+  final ValueChanged<ProductoInventario> onEditar;
+  final ValueChanged<ProductoInventario> onEliminar;
+
+  @override
+  State<_ProductosInventarioSection> createState() =>
+      _ProductosInventarioSectionState();
+}
+
+class _ProductosInventarioSectionState
+    extends State<_ProductosInventarioSection> {
+  final Set<String> _categoriasSeleccionadas = {};
+  String _ordenProductos = _ordenNombre;
+
+  @override
+  void didUpdateWidget(covariant _ProductosInventarioSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final categoriasActuales = _categoriasDisponibles().toSet();
+    _categoriasSeleccionadas.removeWhere(
+      (categoria) => !categoriasActuales.contains(categoria),
+    );
+  }
+
+  List<String> _categoriasDisponibles() {
+    final categoriasDisponibles = <String>{
+      ...widget.categorias,
+      ...widget.productos
+          .map((producto) => producto.categoria.trim())
+          .where((categoria) => categoria.isNotEmpty),
+    }.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+    return categoriasDisponibles;
+  }
+
+  void _toggleCategoria(String categoria) {
+    setState(() {
+      if (_categoriasSeleccionadas.contains(categoria)) {
+        _categoriasSeleccionadas.remove(categoria);
+      } else {
+        _categoriasSeleccionadas.add(categoria);
+      }
+    });
+  }
+
+  void _limpiarCategorias() {
+    setState(() => _categoriasSeleccionadas.clear());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final categoriasDisponibles = _categoriasDisponibles();
+    final productosFiltrados =
+        widget.productos.where((producto) {
+          if (_categoriasSeleccionadas.isEmpty) {
+            return true;
+          }
+
+          return _categoriasSeleccionadas.any(
+            (categoria) =>
+                producto.categoria.trim().toLowerCase() ==
+                categoria.trim().toLowerCase(),
+          );
+        }).toList()..sort((a, b) {
+          if (_ordenProductos == _ordenCategoria) {
+            final categoriaComparada = a.categoria.toLowerCase().compareTo(
+              b.categoria.toLowerCase(),
+            );
+            if (categoriaComparada != 0) {
+              return categoriaComparada;
+            }
+          }
+
+          return a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase());
+        });
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'Productos',
-          style: Theme.of(
-            context,
-          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+        _TituloSeccion(
+          titulo: 'Productos',
+          accion: Text(
+            '${productosFiltrados.length} visibles',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Colors.grey[700],
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ),
         const SizedBox(height: 12),
-        if (productos.isEmpty)
+        _ControlesProductosInventario(
+          categorias: categoriasDisponibles,
+          categoriasSeleccionadas: _categoriasSeleccionadas,
+          ordenProductos: _ordenProductos,
+          onToggleCategoria: _toggleCategoria,
+          onLimpiarCategorias: _limpiarCategorias,
+          onCambiarOrdenProductos: (orden) {
+            if (orden == null) return;
+            setState(() => _ordenProductos = orden);
+          },
+        ),
+        const SizedBox(height: 12),
+        if (widget.productos.isEmpty)
           const _EstadoVacio(
             icon: Icons.inventory_2_outlined,
             mensaje: 'No hay productos registrados',
           )
+        else if (productosFiltrados.isEmpty)
+          const _EstadoVacio(
+            icon: Icons.filter_alt_off_outlined,
+            mensaje: 'No hay productos en esta categoria',
+          )
         else
-          ...productos.map(
+          ...productosFiltrados.map(
             (producto) => _ProductoInventarioCard(
               producto: producto,
-              onEditar: () => onEditar(producto),
-              onEliminar: () => onEliminar(producto),
+              onEditar: () => widget.onEditar(producto),
+              onEliminar: () => widget.onEliminar(producto),
             ),
           ),
+      ],
+    );
+  }
+}
+
+class _ControlesProductosInventario extends StatelessWidget {
+  const _ControlesProductosInventario({
+    required this.categorias,
+    required this.categoriasSeleccionadas,
+    required this.ordenProductos,
+    required this.onToggleCategoria,
+    required this.onLimpiarCategorias,
+    required this.onCambiarOrdenProductos,
+  });
+
+  final List<String> categorias;
+  final Set<String> categoriasSeleccionadas;
+  final String ordenProductos;
+  final ValueChanged<String> onToggleCategoria;
+  final VoidCallback onLimpiarCategorias;
+  final ValueChanged<String?> onCambiarOrdenProductos;
+
+  @override
+  Widget build(BuildContext context) {
+    final textoCategorias = categoriasSeleccionadas.isEmpty
+        ? 'Todas las categorias'
+        : categoriasSeleccionadas.length == 1
+        ? categoriasSeleccionadas.first
+        : '${categoriasSeleccionadas.length} categorias';
+
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      children: [
+        SizedBox(
+          width: 240,
+          child: PopupMenuButton<String>(
+            tooltip: 'Filtrar categorias',
+            onSelected: (valor) {
+              if (valor == _categoriaTodas) {
+                onLimpiarCategorias();
+              } else {
+                onToggleCategoria(valor);
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem<String>(
+                value: _categoriaTodas,
+                child: ListTile(
+                  leading: Icon(Icons.clear_all_outlined),
+                  title: Text('Todas las categorias'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              ...categorias.map((categoria) {
+                return CheckedPopupMenuItem<String>(
+                  value: categoria,
+                  checked: categoriasSeleccionadas.contains(categoria),
+                  child: Text(categoria),
+                );
+              }),
+            ],
+            child: InputDecorator(
+              decoration: const InputDecoration(
+                labelText: 'Filtrar categorias',
+                prefixIcon: Icon(Icons.filter_alt_outlined),
+                suffixIcon: Icon(Icons.arrow_drop_down),
+                isDense: true,
+              ),
+              child: Text(
+                textoCategorias,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        ),
+        SizedBox(
+          width: 220,
+          child: DropdownButtonFormField<String>(
+            initialValue: ordenProductos,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              labelText: 'Ordenar por',
+              prefixIcon: Icon(Icons.sort_outlined),
+              isDense: true,
+            ),
+            items: const [
+              DropdownMenuItem<String>(
+                value: _ordenNombre,
+                child: Text('Nombre'),
+              ),
+              DropdownMenuItem<String>(
+                value: _ordenCategoria,
+                child: Text('Categoria'),
+              ),
+            ],
+            onChanged: onCambiarOrdenProductos,
+          ),
+        ),
       ],
     );
   }

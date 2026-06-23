@@ -58,7 +58,6 @@ class _PantallaRutaState extends State<PantallaRuta> {
   String _estimacionValor = 'Ingresa origen y paradas';
   String _estado = 'Listo para generar una ruta.';
   bool _cargando = false;
-  String? _tiempoCarga;
   bool _mostrarExito = false;
   bool _obteniendoUbicacion = false;
   late String _criterioSeleccionado;
@@ -197,7 +196,6 @@ class _PantallaRutaState extends State<PantallaRuta> {
     setState(() {
       _cargando = true;
       _mostrarExito = false;
-      _tiempoCarga = null;
       _estado = 'Consultando Google Directions...';
       _distanciaTotal = 'Calculando...';
       _tiempoTotal = 'Calculando...';
@@ -210,9 +208,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
           .timeout(
             const Duration(seconds: 5),
             onTimeout: () {
-              throw TimeoutException(
-                'La carga de la ruta excedio los 5 segundos.',
-              );
+              throw TimeoutException('No se pudo completar la ruta.');
             },
           );
 
@@ -229,7 +225,6 @@ class _PantallaRutaState extends State<PantallaRuta> {
         setState(() {
           _estado = 'La respuesta no incluye puntos para dibujar la ruta.';
           _cargando = false;
-          _tiempoCarga = null;
         });
         return;
       }
@@ -268,15 +263,11 @@ class _PantallaRutaState extends State<PantallaRuta> {
         setState(() {
           _estado = 'Los datos de la ruta estan incompletos.';
           _cargando = false;
-          _tiempoCarga = null;
         });
         return;
       }
 
       cronometro.stop();
-      final segundosCarga = (cronometro.elapsedMilliseconds / 1000)
-          .toStringAsFixed(1);
-
       setState(() {
         _ultimoOrigen = origen;
         _ultimasParadasOrdenadas = paradasOrdenadas;
@@ -291,10 +282,9 @@ class _PantallaRutaState extends State<PantallaRuta> {
             '${(rutaSeleccionada.duracionSegundos / 60).round()} min';
         _estimacionTitulo = estimacion['titulo']!;
         _estimacionValor = estimacion['valor']!;
-        _tiempoCarga = '${segundosCarga}s';
         _estado = rutaCandidata.paradasIntermedias.isEmpty
-            ? 'Ruta generada con 1 parada en ${segundosCarga}s.'
-            : 'Ruta generada con ${paradas.length} paradas en ${segundosCarga}s.';
+            ? 'Ruta generada con 1 parada.'
+            : 'Ruta generada con ${paradas.length} paradas.';
         _cargando = false;
         _mostrarExito = true;
         _polylines = {
@@ -351,17 +341,16 @@ class _PantallaRutaState extends State<PantallaRuta> {
       if (!mounted) return;
       setState(() {
         _estado =
-            'La carga excedio 5 segundos. Intenta con menos paradas o verifica tu conexion.';
+            'No se pudo generar la ruta. Intenta con menos paradas o verifica tu conexion.';
         _cargando = false;
-        _tiempoCarga = null;
       });
     } catch (e) {
       cronometro.stop();
       if (!mounted) return;
       setState(() {
-        _estado = 'Error consultando la ruta: $e';
+        _estado =
+            'No se pudo consultar la ruta. Verifica tu conexion e intenta nuevamente.';
         _cargando = false;
-        _tiempoCarga = null;
       });
     }
   }
@@ -760,14 +749,6 @@ class _PantallaRutaState extends State<PantallaRuta> {
                               fontWeight: FontWeight.w500,
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Tiempo limite: 5 segundos',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.grey[600],
-                            ),
-                          ),
                         ],
                       ),
                     ),
@@ -801,7 +782,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        'Ruta cargada en $_tiempoCarga',
+                        'Ruta cargada',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 12,
