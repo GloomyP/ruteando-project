@@ -223,7 +223,7 @@ class _RuteandoAppState extends State<RuteandoApp> {
   final ValueNotifier<String?> _rutaActualNotifier = ValueNotifier<String?>(
     '/login',
   );
-  late final NavigatorObserver _fondoRutaObserver;
+  late final _FondoRutaObserver _fondoRutaObserver;
 
   @override
   void initState() {
@@ -235,6 +235,7 @@ class _RuteandoAppState extends State<RuteandoApp> {
   @override
   void dispose() {
     appSettingsService.removeListener(_actualizarConfiguracion);
+    _fondoRutaObserver.dispose();
     _rutaActualNotifier.dispose();
     super.dispose();
   }
@@ -393,11 +394,24 @@ class _FondoRutaObserver extends NavigatorObserver {
   _FondoRutaObserver(this.rutaActualNotifier);
 
   final ValueNotifier<String?> rutaActualNotifier;
+  bool _disposed = false;
+
+  void dispose() {
+    _disposed = true;
+  }
 
   void _actualizarRuta(Route<dynamic>? route) {
     final nombre = route?.settings.name;
-    if (nombre != null && nombre.isNotEmpty) {
-      rutaActualNotifier.value = nombre;
+    if (nombre != null &&
+        nombre.isNotEmpty &&
+        nombre != rutaActualNotifier.value) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_disposed || nombre == rutaActualNotifier.value) {
+          return;
+        }
+
+        rutaActualNotifier.value = nombre;
+      });
     }
   }
 
@@ -1475,9 +1489,9 @@ class _PantallaConductoresState extends State<PantallaConductores> {
       ),
       drawer: _buildMenuDrawer(context, currentRoute: '/repartidores'),
       body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 520),
               child: _cargando
