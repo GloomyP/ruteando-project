@@ -143,10 +143,10 @@ Future<void> _guardarEmpresaVinculada(Map<String, String> empresa) async {
       'actualizado': DateTime.now().toIso8601String(),
     }, onConflict: 'id');
 
-    final identificadores = [email, uid]
-        .whereType<String>()
-        .where((id) => id.isNotEmpty)
-        .toSet();
+    final identificadores = [
+      email,
+      uid,
+    ].whereType<String>().where((id) => id.isNotEmpty).toSet();
 
     for (final identificador in identificadores) {
       await supabaseRest.upsert('usuarios_empresas', {
@@ -664,7 +664,6 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     return Scaffold(
       onDrawerChanged: (isOpened) {
         if (isOpened) {
@@ -788,8 +787,8 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                 const SizedBox(height: 24),
                 Text(
                   'Bienvenido a Ruteando',
-                  style: TextStyle(
-                    color: colors.onSurface,
+                  style: const TextStyle(
+                    color: Color(0xFF1F2933),
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
                   ),
@@ -798,9 +797,9 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
                 const SizedBox(height: 12),
                 Text(
                   'Gestiona tus operaciones de reparto desde aquí',
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 16,
-                    color: colors.onSurfaceVariant,
+                    color: Color(0xFF3F4A3F),
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -1103,8 +1102,8 @@ class _PantallaConductoresState extends State<PantallaConductores> {
         final visible = rows.isEmpty
             ? null
             : (rows.first['contrasenaTemporalVisible'] ??
-                    rows.first['contrasena_temporal_visible'])
-                ?.toString();
+                      rows.first['contrasena_temporal_visible'])
+                  ?.toString();
         if (visible != null && visible.isNotEmpty) {
           contrasenas[correo] = visible;
         }
