@@ -65,7 +65,21 @@ class InventarioService {
   }
 
   Future<void> actualizarProducto(ProductoInventario producto) async {
-    await _guardarProducto(producto.copyWith(actualizadoEn: DateTime.now()));
+    final actualizado = producto.copyWith(actualizadoEn: DateTime.now());
+    final empresaKey = await empresaOperativaKey();
+    final rows = await supabaseRest.update(
+      'inventario_productos',
+      _productoPayload(actualizado),
+      filters: {
+        'empresa_key': SupabaseConfig.eq(empresaKey),
+        'id': SupabaseConfig.eq(actualizado.id),
+      },
+    );
+
+    if (rows.isEmpty) {
+      throw StateError('No se encontro el producto para actualizar.');
+    }
+
     _notificarCambios();
   }
 
@@ -182,9 +196,22 @@ class InventarioService {
   Future<void> _guardarProducto(ProductoInventario producto) async {
     await supabaseRest.upsert('inventario_productos', {
       'empresa_key': await empresaOperativaKey(),
-      ...producto.toMap(),
-      'actualizado': DateTime.now().toIso8601String(),
+      ..._productoPayload(producto),
     }, onConflict: 'empresa_key,id');
+  }
+
+  Map<String, dynamic> _productoPayload(ProductoInventario producto) {
+    return {
+      'id': producto.id,
+      'nombre': producto.nombre,
+      'categoria': producto.categoria,
+      'descripcion': producto.descripcion,
+      'stockActual': producto.stockActual,
+      'stockMinimo': producto.stockMinimo,
+      'unidad': producto.unidad,
+      'estado': producto.estadoCalculado,
+      'actualizado': DateTime.now().toIso8601String(),
+    };
   }
 
   int _calcularNuevoStock({

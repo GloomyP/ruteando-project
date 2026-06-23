@@ -3,6 +3,49 @@ import 'package:flutter/material.dart';
 import 'cierre_sesion.dart';
 import 'perfil_usuario.dart';
 
+const Map<String, List<String>> regionesComunas = {
+  'Valparaíso': [
+    'Algarrobo',
+    'Cabildo',
+    'Calle Larga',
+    'Cartagena',
+    'Casablanca',
+    'Catemu',
+    'Concón',
+    'El Quisco',
+    'El Tabo',
+    'Hijuelas',
+    'Isla de Pascua',
+    'Juan Fernández',
+    'La Calera',
+    'La Cruz',
+    'La Ligua',
+    'Limache',
+    'Llaillay',
+    'Los Andes',
+    'Nogales',
+    'Olmué',
+    'Panquehue',
+    'Papudo',
+    'Petorca',
+    'Puchuncaví',
+    'Putaendo',
+    'Quillota',
+    'Quilpué',
+    'Quintero',
+    'Rinconada',
+    'San Antonio',
+    'San Esteban',
+    'San Felipe',
+    'Santa María',
+    'Santo Domingo',
+    'Valparaíso',
+    'Villa Alemana',
+    'Viña del Mar',
+    'Zapallar',
+  ],
+};
+
 class PantallaPerfil extends StatefulWidget {
   const PantallaPerfil({super.key});
 
@@ -14,11 +57,11 @@ class _PantallaPerfilState extends State<PantallaPerfil> {
   final _formKey = GlobalKey<FormState>();
   final _nombreController = TextEditingController();
   final _telefonoController = TextEditingController();
-  final _regionController = TextEditingController();
-  final _comunaController = TextEditingController();
   final _direccionController = TextEditingController();
 
   PerfilUsuario? _perfil;
+  String? _regionSeleccionada;
+  String? _comunaSeleccionada;
   bool _cargando = true;
   bool _editando = false;
   bool _guardando = false;
@@ -35,8 +78,6 @@ class _PantallaPerfilState extends State<PantallaPerfil> {
   void dispose() {
     _nombreController.dispose();
     _telefonoController.dispose();
-    _regionController.dispose();
-    _comunaController.dispose();
     _direccionController.dispose();
     super.dispose();
   }
@@ -52,8 +93,11 @@ class _PantallaPerfilState extends State<PantallaPerfil> {
       _perfil = perfil;
       _nombreController.text = perfil.nombre;
       _telefonoController.text = perfil.telefono;
-      _regionController.text = perfil.region;
-      _comunaController.text = perfil.comuna;
+      _regionSeleccionada = _regionValida(perfil.region);
+      _comunaSeleccionada = _comunaValida(
+        region: _regionSeleccionada,
+        comuna: perfil.comuna,
+      );
       _direccionController.text = perfil.direccion;
       _cargando = false;
     });
@@ -82,8 +126,8 @@ class _PantallaPerfilState extends State<PantallaPerfil> {
       nombre: _nombreController.text.trim(),
       email: _perfil!.email,
       telefono: _telefonoController.text.trim(),
-      region: _regionController.text.trim(),
-      comuna: _comunaController.text.trim(),
+      region: _regionSeleccionada?.trim() ?? '',
+      comuna: _comunaSeleccionada?.trim() ?? '',
       direccion: _direccionController.text.trim(),
     );
 
@@ -231,6 +275,10 @@ class _PantallaPerfilState extends State<PantallaPerfil> {
   }
 
   Widget _buildFormulario(PerfilUsuario? perfil) {
+    final comunas = _regionSeleccionada == null
+        ? const <String>[]
+        : regionesComunas[_regionSeleccionada] ?? const <String>[];
+
     return Column(
       children: [
         TextFormField(
@@ -262,20 +310,41 @@ class _PantallaPerfilState extends State<PantallaPerfil> {
           keyboardType: TextInputType.phone,
         ),
         const SizedBox(height: 12),
-        TextFormField(
-          controller: _regionController,
+        DropdownButtonFormField<String>(
+          initialValue: _regionSeleccionada,
+          isExpanded: true,
           decoration: const InputDecoration(
             labelText: 'Region',
             prefixIcon: Icon(Icons.public),
           ),
+          items: regionesComunas.keys.map((region) {
+            return DropdownMenuItem<String>(value: region, child: Text(region));
+          }).toList(),
+          onChanged: _guardando
+              ? null
+              : (region) {
+                  setState(() {
+                    _regionSeleccionada = region;
+                    _comunaSeleccionada = null;
+                  });
+                },
         ),
         const SizedBox(height: 12),
-        TextFormField(
-          controller: _comunaController,
+        DropdownButtonFormField<String>(
+          initialValue: _comunaSeleccionada,
+          isExpanded: true,
           decoration: const InputDecoration(
             labelText: 'Comuna',
             prefixIcon: Icon(Icons.map_outlined),
           ),
+          items: comunas.map((comuna) {
+            return DropdownMenuItem<String>(value: comuna, child: Text(comuna));
+          }).toList(),
+          onChanged: _guardando || _regionSeleccionada == null
+              ? null
+              : (comuna) {
+                  setState(() => _comunaSeleccionada = comuna);
+                },
         ),
         const SizedBox(height: 12),
         TextFormField(
@@ -334,6 +403,47 @@ class _PantallaPerfilState extends State<PantallaPerfil> {
   String _valorPerfil(String? valor, String fallback) {
     final limpio = valor?.trim();
     return limpio == null || limpio.isEmpty ? fallback : limpio;
+  }
+
+  String? _regionValida(String? region) {
+    final limpia = region?.trim();
+    if (limpia == null || limpia.isEmpty) {
+      return null;
+    }
+
+    for (final disponible in regionesComunas.keys) {
+      if (_normalizar(disponible) == _normalizar(limpia)) {
+        return disponible;
+      }
+    }
+
+    return null;
+  }
+
+  String? _comunaValida({required String? region, required String? comuna}) {
+    final limpia = comuna?.trim();
+    if (region == null || limpia == null || limpia.isEmpty) {
+      return null;
+    }
+
+    for (final disponible in regionesComunas[region] ?? const <String>[]) {
+      if (_normalizar(disponible) == _normalizar(limpia)) {
+        return disponible;
+      }
+    }
+
+    return null;
+  }
+
+  String _normalizar(String valor) {
+    return valor
+        .toLowerCase()
+        .replaceAll('á', 'a')
+        .replaceAll('é', 'e')
+        .replaceAll('í', 'i')
+        .replaceAll('ó', 'o')
+        .replaceAll('ú', 'u')
+        .replaceAll('ü', 'u');
   }
 }
 

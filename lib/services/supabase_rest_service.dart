@@ -93,6 +93,46 @@ class SupabaseRestService {
     }
   }
 
+  Future<List<Map<String, dynamic>>> update(
+    String table,
+    Map<String, dynamic> data, {
+    required Map<String, String> filters,
+  }) async {
+    if (!isConfigured) {
+      return [];
+    }
+
+    final response = await _client.patch(
+      _uri(table, filters),
+      headers: {..._headers, 'Prefer': 'return=representation'},
+      body: jsonEncode(data),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      debugPrint('Supabase update $table fallo: ${response.body}');
+      throw SupabaseRestException(
+        'No se pudo actualizar $table.',
+        response.statusCode,
+        response.body,
+      );
+    }
+
+    final body = response.body.trim();
+    if (body.isEmpty) {
+      return [];
+    }
+
+    final decoded = jsonDecode(body);
+    if (decoded is! List) {
+      return [];
+    }
+
+    return decoded
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
   Future<void> insert(String table, Map<String, dynamic> data) async {
     if (!isConfigured) {
       return;
@@ -125,6 +165,17 @@ class SupabaseRestService {
       debugPrint('Supabase delete $table fallo: ${response.body}');
     }
   }
+}
+
+class SupabaseRestException implements Exception {
+  const SupabaseRestException(this.message, this.statusCode, this.body);
+
+  final String message;
+  final int statusCode;
+  final String body;
+
+  @override
+  String toString() => body.trim().isEmpty ? message : '$message $body';
 }
 
 class SupabaseConfig {
