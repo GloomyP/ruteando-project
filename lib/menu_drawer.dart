@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'cierre_sesion.dart';
 import 'roles.dart';
+import 'web_focus_helper.dart'
+    if (dart.library.html) 'web_focus_helper_web.dart';
 
 class AppMenuDrawer extends StatelessWidget {
   const AppMenuDrawer({super.key, this.currentRoute});
@@ -9,6 +11,7 @@ class AppMenuDrawer extends StatelessWidget {
   final String? currentRoute;
 
   Future<void> _abrirRuta(BuildContext context, String routeName) async {
+    liberarFocoPlataforma();
     final navigator = Navigator.of(context);
     navigator.pop();
 

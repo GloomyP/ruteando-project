@@ -260,17 +260,21 @@ class _PantallaInventarioState extends State<PantallaInventario> {
               title: Text(
                 producto == null ? 'Nuevo producto' : 'Editar producto',
               ),
-              content: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 560),
+              content: SizedBox(
+                width: 320,
                 child: SingleChildScrollView(
                   child: Form(
                     key: formKey,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         TextFormField(
                           controller: nombreController,
-                          textInputAction: TextInputAction.next,
+                          minLines: 1,
+                          maxLines: null,
+                          keyboardType: TextInputType.multiline,
+                          textInputAction: TextInputAction.newline,
                           decoration: const InputDecoration(
                             labelText: 'Nombre',
                             prefixIcon: Icon(Icons.inventory_2_outlined),
@@ -303,7 +307,9 @@ class _PantallaInventarioState extends State<PantallaInventario> {
                         const SizedBox(height: 14),
                         TextFormField(
                           controller: descripcionController,
-                          maxLines: 2,
+                          minLines: 2,
+                          maxLines: null,
+                          keyboardType: TextInputType.multiline,
                           decoration: const InputDecoration(
                             labelText: 'Descripcion',
                             prefixIcon: Icon(Icons.notes_outlined),
