@@ -810,35 +810,50 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
           ),
         ),
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: OutlinedButton.icon(
-                onPressed: _mostrarHistorialRutas,
-                icon: const Icon(Icons.history),
-                label: const Text('Historial de rutas'),
-              ),
-            ),
-          ),
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: _cargarDatos,
-              child: Center(
-                child: _cargando
-                    ? const CircularProgressIndicator()
-                    : ConstrainedBox(
+      body: RefreshIndicator(
+        onRefresh: _cargarDatos,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: OutlinedButton.icon(
+                        onPressed: _mostrarHistorialRutas,
+                        icon: const Icon(Icons.history),
+                        label: const Text('Historial de rutas'),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Center(
+                      child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 600),
-                        child: _asignaciones.isEmpty
+                        child: _cargando
+                            ? SizedBox(
+                                height: constraints.maxHeight > 72
+                                    ? constraints.maxHeight - 72
+                                    : 120,
+                                child: const Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                              )
+                            : _asignaciones.isEmpty
                             ? _buildEmptyState()
                             : _buildListaAsignaciones(),
                       ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ),
-        ],
+            );
+          },
+        ),
       ),
       floatingActionButton: _asignaciones.isNotEmpty
           ? FloatingActionButton.extended(
@@ -854,48 +869,48 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
   }
 
   Widget _buildEmptyState() {
-    return ListView(
-      shrinkWrap: true,
-      physics: const AlwaysScrollableScrollPhysics(),
+    return Padding(
       padding: const EdgeInsets.all(24),
-      children: [
-        const SizedBox(height: 48),
-        Icon(Icons.assignment_outlined, size: 96, color: Colors.grey[400]),
-        const SizedBox(height: 24),
-        const Text(
-          'Sin rutas asignadas hoy',
-          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 12),
-        Text(
-          'Genera y asigna rutas optimizadas a tus repartidores para planificar la operación diaria de tu flota.',
-          style: TextStyle(fontSize: 15, color: Colors.grey[600]),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 32),
-        Center(
-          child: FilledButton.icon(
-            onPressed: () =>
-                Navigator.of(context).pushReplacementNamed('/rutas'),
-            icon: const Icon(Icons.alt_route),
-            label: const Text('Planificar y Optimizar Ruta'),
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              backgroundColor: Colors.green[800],
+      child: Column(
+        children: [
+          const SizedBox(height: 48),
+          Icon(Icons.assignment_outlined, size: 96, color: Colors.grey[400]),
+          const SizedBox(height: 24),
+          const Text(
+            'Sin rutas asignadas hoy',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Genera y asigna rutas optimizadas a tus repartidores para planificar la operación diaria de tu flota.',
+            style: TextStyle(fontSize: 15, color: Colors.grey[600]),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 32),
+          Center(
+            child: FilledButton.icon(
+              onPressed: () =>
+                  Navigator.of(context).pushReplacementNamed('/rutas'),
+              icon: const Icon(Icons.alt_route),
+              label: const Text('Planificar y Optimizar Ruta'),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 16,
+                ),
+                backgroundColor: Colors.green[800],
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
   Widget _buildListaAsignaciones() {
-    return ListView.builder(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.all(16),
-      itemCount: _asignaciones.length,
-      itemBuilder: (context, index) {
+    return Column(
+      children: List.generate(_asignaciones.length, (index) {
         final asignacion = _asignaciones[index];
         final nombre =
             asignacion['repartidorNombre']?.toString() ?? 'Repartidor';
@@ -1117,7 +1132,7 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
             ),
           ),
         );
-      },
+      }),
     );
   }
 }
