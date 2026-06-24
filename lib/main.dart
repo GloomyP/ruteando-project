@@ -381,6 +381,7 @@ class _RuteandoAppState extends State<RuteandoApp> {
         '/empresa': (context) =>
             const PantallaProtegidaAdmin(pantalla: PantallaRegistroEmpresa()),
         '/mi-ruta': (context) => const PantallaRutaAsignada(),
+        '/estado-entregas': (context) => const PantallaEstadoEntregas(),
       },
       home: const _AuthGate(),
       builder: (context, child) {
@@ -458,6 +459,7 @@ class _FondoGlobalApp extends StatelessWidget {
     '/asignacion-rutas': 'imagenes/asignacion-rutas.png',
     '/monitoreo-entregas': 'imagenes/monitoreo-entregas.png',
     '/perfil': 'imagenes/perfil.png',
+    '/estado-entregas': 'imagenes/perfil.png',
   };
 
   @override
@@ -1202,10 +1204,7 @@ class _InicioDashboardContent extends StatelessWidget {
         return SingleChildScrollView(
           child: Column(
             children: [
-              _InicioHero(
-                empresaFuture: empresaFuture,
-                esCompacto: esCompacto,
-              ),
+              _InicioHero(empresaFuture: empresaFuture, esCompacto: esCompacto),
               _InicioAccesosRapidos(
                 resumenFuture: resumenFuture,
                 onAbrirRuta: onAbrirRuta,
@@ -1544,6 +1543,7 @@ class _ResumenDashboardCard extends StatelessWidget {
     );
   }
 }
+
 class _EmpresaVinculadaCard extends StatelessWidget {
   const _EmpresaVinculadaCard({required this.empresa});
 
@@ -2723,6 +2723,319 @@ class _PantallaRegistroEmpresaState extends State<PantallaRegistroEmpresa> {
       ),
     );
   }
+}
+
+class PantallaEstadoEntregas extends StatefulWidget {
+  const PantallaEstadoEntregas({super.key});
+
+  @override
+  State<PantallaEstadoEntregas> createState() => _PantallaEstadoEntregasState();
+}
+
+class _PantallaEstadoEntregasState extends State<PantallaEstadoEntregas> {
+  late Future<List<Map<String, dynamic>>> _historialFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _historialFuture = _cargarHistorial();
+  }
+
+  String get _driverEmail {
+    try {
+      return AppAuth.instance.currentUser?.email.toLowerCase().trim() ??
+          'local';
+    } catch (_) {
+      return 'local';
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _cargarHistorial() async {
+    final email = _driverEmail;
+    final historial = await cargarHistorialRutasTerminadas();
+    final filtrado = historial.where((ruta) {
+      final repartidorEmail = ruta['repartidorEmail']
+          ?.toString()
+          .toLowerCase()
+          .trim();
+      return repartidorEmail == email;
+    }).toList();
+
+    filtrado.sort((a, b) {
+      final fechaA = _leerFechaHistorial(a);
+      final fechaB = _leerFechaHistorial(b);
+      return fechaB.compareTo(fechaA);
+    });
+
+    return filtrado;
+  }
+
+  Future<void> _recargar() async {
+    setState(() => _historialFuture = _cargarHistorial());
+    await _historialFuture;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Estado de entregas'),
+        backgroundColor: Colors.green[800],
+        foregroundColor: Colors.white,
+        actions: _accionesPerfil(context),
+      ),
+      drawer: _buildMenuDrawer(context, currentRoute: '/estado-entregas'),
+      body: RefreshIndicator(
+        onRefresh: _recargar,
+        child: FutureBuilder<List<Map<String, dynamic>>>(
+          future: _historialFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            if (snapshot.hasError) {
+              return ListView(
+                padding: const EdgeInsets.all(24),
+                children: [
+                  _EstadoEntregaVacio(
+                    icon: Icons.error_outline,
+                    titulo: 'No se pudo cargar el historial',
+                    mensaje: snapshot.error.toString(),
+                  ),
+                ],
+              );
+            }
+
+            final historial = snapshot.data ?? const <Map<String, dynamic>>[];
+            if (historial.isEmpty) {
+              return ListView(
+                padding: const EdgeInsets.all(24),
+                children: const [
+                  _EstadoEntregaVacio(
+                    icon: Icons.fact_check_outlined,
+                    titulo: 'Sin entregas registradas',
+                    mensaje:
+                        'Cuando completes rutas, apareceran en este historial.',
+                  ),
+                ],
+              );
+            }
+
+            return ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: historial.length + 1,
+              separatorBuilder: (_, index) => index == 0
+                  ? const SizedBox(height: 12)
+                  : const SizedBox(height: 10),
+              itemBuilder: (context, index) {
+                if (index == 0) {
+                  return Text(
+                    'Historial de rutas realizadas',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: colors.onSurface,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  );
+                }
+
+                return _EntregaHistorialCard(ruta: historial[index - 1]);
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _EntregaHistorialCard extends StatelessWidget {
+  const _EntregaHistorialCard({required this.ruta});
+
+  final Map<String, dynamic> ruta;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final origen = ruta['origen']?.toString() ?? 'Origen no registrado';
+    final paradas = ruta['paradas'] as List? ?? const [];
+    final destino = paradas.isNotEmpty && paradas.last is Map
+        ? (paradas.last as Map)['texto']?.toString() ?? 'Destino no registrado'
+        : 'Destino no registrado';
+    final entregadas = paradas.where((parada) {
+      return parada is Map && parada['estado']?.toString() == 'Entregado';
+    }).length;
+
+    return Card(
+      color: Theme.of(context).cardTheme.color,
+      surfaceTintColor: Colors.transparent,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CircleAvatar(
+                  backgroundColor: colors.primaryContainer,
+                  foregroundColor: colors.onPrimaryContainer,
+                  child: const Icon(Icons.route_outlined),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        destino,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: colors.onSurface,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Completada: ${_formatearFechaHistorial(ruta['fechaCompletado'])}',
+                        style: TextStyle(color: colors.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _EntregaDato(icon: Icons.trip_origin, texto: 'Origen: $origen'),
+            _EntregaDato(
+              icon: Icons.location_on_outlined,
+              texto: 'Destino: $destino',
+            ),
+            _EntregaDato(
+              icon: Icons.play_circle_outline,
+              texto: 'Inicio: ${_formatearFechaHistorial(ruta['fechaInicio'])}',
+            ),
+            _EntregaDato(
+              icon: Icons.flag_circle_outlined,
+              texto:
+                  'Termino: ${_formatearFechaHistorial(ruta['fechaCompletado'])}',
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                Chip(
+                  avatar: const Icon(Icons.pin_drop_outlined, size: 16),
+                  label: Text('${paradas.length} paradas'),
+                ),
+                Chip(
+                  avatar: const Icon(Icons.check_circle_outline, size: 16),
+                  label: Text('$entregadas entregadas'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EntregaDato extends StatelessWidget {
+  const _EntregaDato({required this.icon, required this.texto});
+
+  final IconData icon;
+  final String texto;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: colors.onSurfaceVariant),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(texto, style: TextStyle(color: colors.onSurface)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EstadoEntregaVacio extends StatelessWidget {
+  const _EstadoEntregaVacio({
+    required this.icon,
+    required this.titulo,
+    required this.mensaje,
+  });
+
+  final IconData icon;
+  final String titulo;
+  final String mensaje;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 360),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 72, color: colors.onSurfaceVariant),
+            const SizedBox(height: 18),
+            Text(
+              titulo,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: colors.onSurface,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              mensaje,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: colors.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+DateTime _leerFechaHistorial(Map<String, dynamic> ruta) {
+  return DateTime.tryParse(
+        ruta['fechaCompletado']?.toString() ??
+            ruta['fechaAsignacion']?.toString() ??
+            ruta['fechaInicio']?.toString() ??
+            '',
+      ) ??
+      DateTime.fromMillisecondsSinceEpoch(0);
+}
+
+String _formatearFechaHistorial(dynamic valor) {
+  final fecha = DateTime.tryParse(valor?.toString() ?? '');
+  if (fecha == null) {
+    return 'No registrada';
+  }
+
+  String dosDigitos(int numero) => numero.toString().padLeft(2, '0');
+  return '${dosDigitos(fecha.day)}/${dosDigitos(fecha.month)}/${fecha.year} '
+      '${dosDigitos(fecha.hour)}:${dosDigitos(fecha.minute)}';
 }
 
 class PantallaRutaAsignada extends StatefulWidget {

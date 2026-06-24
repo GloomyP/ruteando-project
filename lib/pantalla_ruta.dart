@@ -76,7 +76,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
     }
 
     final rol = await cargarRolUsuario();
-    final rutaAdmin = ruta != '/mi-ruta';
+    final rutaAdmin = ruta != '/mi-ruta' && ruta != '/estado-entregas';
     if (rutaAdmin && !puedeAdministrar(rol)) {
       if (!context.mounted) {
         return;
@@ -703,7 +703,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
                     ListTile(
                       leading: const Icon(Icons.fact_check_outlined),
                       title: const Text('Estado de entregas'),
-                      onTap: () => _abrirPantalla(context, '/mi-ruta'),
+                      onTap: () => _abrirPantalla(context, '/estado-entregas'),
                     ),
                   ],
                   const Spacer(),

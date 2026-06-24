@@ -140,7 +140,7 @@ class _PantallaInventarioState extends State<PantallaInventario> {
                   child: Padding(
                     padding: const EdgeInsets.all(24),
                     child: Text(
-                      'No se pudo cargar el stock por repartidor: ${_mensajeErrorAmigable(stockSnapshot.error!)}',
+                      'No se pudo cargar la informacion por repartidor: ${_mensajeErrorAmigable(stockSnapshot.error!)}',
                       textAlign: TextAlign.center,
                       style: const TextStyle(color: Colors.red),
                     ),
@@ -166,8 +166,6 @@ class _PantallaInventarioState extends State<PantallaInventario> {
                     );
                   }
 
-                  final stockRepartidores =
-                      stockSnapshot.data ?? const <StockRepartidorInventario>[];
                   final movimientos =
                       movimientosSnapshot.data ??
                       const <MovimientoInventario>[];
@@ -181,12 +179,8 @@ class _PantallaInventarioState extends State<PantallaInventario> {
                         constraints: const BoxConstraints(maxWidth: 980),
                         child: _InventarioContenido(
                           productos: productos,
-                          stockRepartidores: stockRepartidores,
                           movimientos: movimientos,
                           categorias: _categorias,
-                          cargandoStock:
-                              stockSnapshot.connectionState ==
-                              ConnectionState.waiting,
                           cargandoMovimientos:
                               movimientosSnapshot.connectionState ==
                               ConnectionState.waiting,
@@ -545,7 +539,7 @@ class _PantallaInventarioState extends State<PantallaInventario> {
               contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
               title: Text(
                 stock == null
-                    ? 'Stock por repartidor'
+                    ? 'Registrar stock del repartidor'
                     : 'Actualizar stock del repartidor',
               ),
               content: ConstrainedBox(
@@ -1035,10 +1029,8 @@ class _PantallaInventarioState extends State<PantallaInventario> {
 class _InventarioContenido extends StatelessWidget {
   const _InventarioContenido({
     required this.productos,
-    required this.stockRepartidores,
     required this.movimientos,
     required this.categorias,
-    required this.cargandoStock,
     required this.cargandoMovimientos,
     required this.onCrearProducto,
     required this.onEditar,
@@ -1049,10 +1041,8 @@ class _InventarioContenido extends StatelessWidget {
   });
 
   final List<ProductoInventario> productos;
-  final List<StockRepartidorInventario> stockRepartidores;
   final List<MovimientoInventario> movimientos;
   final List<String> categorias;
-  final bool cargandoStock;
   final bool cargandoMovimientos;
   final VoidCallback onCrearProducto;
   final ValueChanged<ProductoInventario> onEditar;
@@ -1063,6 +1053,11 @@ class _InventarioContenido extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final productosPorId = {
+      for (final producto in productos)
+        if (producto.id.isNotEmpty) producto.id: producto,
+    };
+
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
@@ -1073,43 +1068,6 @@ class _InventarioContenido extends StatelessWidget {
           onCrearProducto: onCrearProducto,
           onGuardarStock: () => onGuardarStock(null),
           onRegistrarMovimiento: onRegistrarMovimiento,
-        ),
-        const SizedBox(height: 20),
-        _TituloSeccion(
-          titulo: 'Stock por repartidor',
-          accion: FilledButton.icon(
-            onPressed: () => onGuardarStock(null),
-            icon: const Icon(Icons.add),
-            label: const Text('Stock'),
-            style: FilledButton.styleFrom(backgroundColor: Colors.green[800]),
-          ),
-        ),
-        const SizedBox(height: 12),
-        if (cargandoStock)
-          const Center(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: CircularProgressIndicator(),
-            ),
-          )
-        else if (stockRepartidores.isEmpty)
-          const _EstadoVacio(
-            icon: Icons.local_shipping_outlined,
-            mensaje: 'No hay stock registrado por repartidor',
-          )
-        else
-          ...stockRepartidores.map(
-            (stock) => _StockRepartidorCard(
-              stock: stock,
-              onEditar: () => onGuardarStock(stock),
-            ),
-          ),
-        const SizedBox(height: 20),
-        _ProductosInventarioSection(
-          productos: productos,
-          categorias: categorias,
-          onEditar: onEditar,
-          onEliminar: onEliminar,
         ),
         const SizedBox(height: 20),
         _TituloSeccion(
@@ -1138,9 +1096,17 @@ class _InventarioContenido extends StatelessWidget {
           ...movimientos.map(
             (movimiento) => _MovimientoInventarioCard(
               movimiento: movimiento,
+              productosPorId: productosPorId,
               onEliminar: () => onEliminarMovimiento(movimiento),
             ),
           ),
+        const SizedBox(height: 20),
+        _ProductosInventarioSection(
+          productos: productos,
+          categorias: categorias,
+          onEditar: onEditar,
+          onEliminar: onEliminar,
+        ),
       ],
     );
   }
@@ -1584,121 +1550,15 @@ class _TituloSeccion extends StatelessWidget {
   }
 }
 
-class _StockRepartidorCard extends StatelessWidget {
-  const _StockRepartidorCard({required this.stock, required this.onEditar});
-
-  final StockRepartidorInventario stock;
-  final VoidCallback onEditar;
-
-  @override
-  Widget build(BuildContext context) {
-    final pendiente = stock.stockPendiente;
-    final colorPendiente = pendiente < 0
-        ? const Color(0xFFDC2626)
-        : const Color(0xFF2563EB);
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 2,
-      color: Theme.of(context).cardTheme.color,
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: Color(0xFF111111), width: 0.6),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  backgroundColor: Colors.green.withValues(alpha: 0.12),
-                  foregroundColor: Colors.green[800],
-                  child: const Icon(Icons.local_shipping_outlined),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        stock.nombre,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        stock.email,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Editar stock',
-                  onPressed: onEditar,
-                  icon: const Icon(Icons.edit_outlined),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _InfoChip(
-                  icon: Icons.inventory_outlined,
-                  label: 'Cargados: ${stock.bidonesCargados}',
-                ),
-                _InfoChip(
-                  icon: Icons.check_circle_outline,
-                  label: 'Entregados: ${stock.bidonesEntregados}',
-                ),
-                _InfoChip(
-                  icon: Icons.keyboard_return,
-                  label: 'Retornados: ${stock.bidonesRetornados}',
-                ),
-                _InfoChip(
-                  icon: Icons.report_problem_outlined,
-                  label: 'Danados: ${stock.bidonesDanados}',
-                ),
-                Chip(
-                  avatar: Icon(
-                    Icons.pending_actions_outlined,
-                    size: 16,
-                    color: colorPendiente,
-                  ),
-                  label: Text('Pendiente: $pendiente'),
-                  labelStyle: TextStyle(
-                    color: colorPendiente,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  backgroundColor: colorPendiente.withValues(alpha: 0.1),
-                  side: BorderSide(
-                    color: colorPendiente.withValues(alpha: 0.18),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _MovimientoInventarioCard extends StatelessWidget {
   const _MovimientoInventarioCard({
     required this.movimiento,
+    required this.productosPorId,
     required this.onEliminar,
   });
 
   final MovimientoInventario movimiento;
+  final Map<String, ProductoInventario> productosPorId;
   final VoidCallback onEliminar;
 
   @override
@@ -1706,6 +1566,11 @@ class _MovimientoInventarioCard extends StatelessWidget {
     final color = _colorMovimiento(movimiento.tipo);
     final fecha = _formatearFecha(movimiento.fecha);
     final observacion = movimiento.observacion.trim();
+    final productoNombre =
+        productosPorId[movimiento.productoId]?.nombre ??
+        (movimiento.productoNombre.trim().isEmpty
+            ? 'Producto no disponible'
+            : movimiento.productoNombre);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1723,7 +1588,7 @@ class _MovimientoInventarioCard extends StatelessWidget {
           child: Icon(_iconoMovimiento(movimiento.tipo)),
         ),
         title: Text(
-          movimiento.productoNombre,
+          productoNombre,
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         subtitle: Padding(
@@ -1934,7 +1799,7 @@ class _ProductoInventarioCard extends StatelessWidget {
                 ),
                 _InfoChip(icon: Icons.straighten, label: producto.unidad),
                 _InfoChip(
-                  icon: Icons.attach_money,
+                  icon: Icons.sell_outlined,
                   label:
                       'Precio: ${_formatearPrecioUnidad(producto.precioUnidad)}',
                 ),

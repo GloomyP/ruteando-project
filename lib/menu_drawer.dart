@@ -19,7 +19,8 @@ class AppMenuDrawer extends StatelessWidget {
     }
 
     final rol = await cargarRolUsuario();
-    final esRutaAdmin = routeName != '/mi-ruta';
+    final esRutaAdmin =
+        routeName != '/mi-ruta' && routeName != '/estado-entregas';
     if (esRutaAdmin && !puedeAdministrar(rol)) {
       navigator.pushReplacementNamed('/mi-ruta');
       return;
@@ -125,8 +126,8 @@ class AppMenuDrawer extends StatelessWidget {
                   _DrawerRouteTile(
                     icon: Icons.fact_check_outlined,
                     title: 'Estado de entregas',
-                    selected: currentRoute == '/mi-ruta',
-                    onTap: () => _abrirRuta(context, '/mi-ruta'),
+                    selected: currentRoute == '/estado-entregas',
+                    onTap: () => _abrirRuta(context, '/estado-entregas'),
                   ),
                 ],
                 const Spacer(),
@@ -154,12 +155,19 @@ class _DrawerRouteTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final fondoSeleccionado = colors.brightness == Brightness.dark
+        ? colors.surfaceContainerHighest
+        : Colors.white;
+
     return ListTile(
       leading: Icon(icon),
       title: Text(title),
       selected: selected,
-      selectedTileColor: Colors.green.withValues(alpha: 0.12),
-      selectedColor: Colors.green[800],
+      selectedTileColor: fondoSeleccionado,
+      selectedColor: colors.onSurface,
+      iconColor: selected ? colors.onSurface : colors.onSurfaceVariant,
+      textColor: selected ? colors.onSurface : colors.onSurface,
       onTap: onTap,
     );
   }

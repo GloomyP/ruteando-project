@@ -989,7 +989,7 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
     }
 
     final rol = await cargarRolUsuario();
-    final rutaAdmin = ruta != '/mi-ruta';
+    final rutaAdmin = ruta != '/mi-ruta' && ruta != '/estado-entregas';
     if (rutaAdmin && !puedeAdministrar(rol)) {
       if (!context.mounted) return;
       Navigator.of(context).pushReplacementNamed('/mi-ruta');
@@ -1096,7 +1096,7 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
                     ListTile(
                       leading: const Icon(Icons.fact_check_outlined),
                       title: const Text('Estado de entregas'),
-                      onTap: () => _abrirPantalla(context, '/mi-ruta'),
+                      onTap: () => _abrirPantalla(context, '/estado-entregas'),
                     ),
                   ],
                   const Spacer(),
