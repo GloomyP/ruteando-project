@@ -2867,6 +2867,13 @@ class _EntregaHistorialCard extends StatelessWidget {
     final entregadas = paradas.where((parada) {
       return parada is Map && parada['estado']?.toString() == 'Entregado';
     }).length;
+    final totalProductos = paradas.fold<int>(0, (total, parada) {
+      if (parada is! Map) {
+        return total;
+      }
+
+      return total + _cantidadProductosParada(parada);
+    });
 
     return Card(
       color: Theme.of(context).cardTheme.color,
@@ -2937,12 +2944,178 @@ class _EntregaHistorialCard extends StatelessWidget {
                   avatar: const Icon(Icons.check_circle_outline, size: 16),
                   label: Text('$entregadas entregadas'),
                 ),
+                Chip(
+                  avatar: const Icon(Icons.inventory_2_outlined, size: 16),
+                  label: Text('$totalProductos productos'),
+                ),
               ],
+            ),
+            const SizedBox(height: 8),
+            Theme(
+              data: Theme.of(
+                context,
+              ).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: const EdgeInsets.only(top: 4),
+                iconColor: colors.onSurface,
+                collapsedIconColor: colors.onSurfaceVariant,
+                title: Text(
+                  'Ver detalle de paradas',
+                  style: TextStyle(
+                    color: colors.onSurface,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+                children: paradas.asMap().entries.map((entry) {
+                  final parada = entry.value;
+                  if (parada is! Map) {
+                    return const SizedBox.shrink();
+                  }
+
+                  return _ParadaHistorialDetalle(
+                    index: entry.key,
+                    parada: Map<String, dynamic>.from(parada),
+                  );
+                }).toList(),
+              ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  int _cantidadProductosParada(Map parada) {
+    final mercaderia = parada['mercaderia'];
+    if (mercaderia is! List) {
+      return 0;
+    }
+
+    return mercaderia.fold<int>(0, (total, item) {
+      if (item is! Map) {
+        return total;
+      }
+
+      final cantidad = item['cantidad'];
+      if (cantidad is int) {
+        return total + cantidad;
+      }
+
+      if (cantidad is num) {
+        return total + cantidad.toInt();
+      }
+
+      return total + (int.tryParse(cantidad?.toString() ?? '') ?? 0);
+    });
+  }
+}
+
+class _ParadaHistorialDetalle extends StatelessWidget {
+  const _ParadaHistorialDetalle({required this.index, required this.parada});
+
+  final int index;
+  final Map<String, dynamic> parada;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final texto = parada['texto']?.toString() ?? 'Parada sin direccion';
+    final estado = parada['estado']?.toString() ?? 'Pendiente';
+    final mercaderia = _leerMercaderiaParada(parada);
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CircleAvatar(
+                radius: 14,
+                backgroundColor: colors.primaryContainer,
+                foregroundColor: colors.onPrimaryContainer,
+                child: Text(
+                  '${index + 1}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      texto,
+                      style: TextStyle(
+                        color: colors.onSurface,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Estado: $estado',
+                      style: TextStyle(color: colors.onSurfaceVariant),
+                    ),
+                    if (parada['fechaEntrega'] != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Entregada: ${_formatearFechaHistorial(parada['fechaEntrega'])}',
+                        style: TextStyle(color: colors.onSurfaceVariant),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (mercaderia.isEmpty)
+            Text(
+              'Sin productos registrados en esta parada',
+              style: TextStyle(color: colors.onSurfaceVariant),
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: mercaderia.map((item) {
+                final producto =
+                    item['productoNombre']?.toString() ?? 'Producto';
+                final cantidad = item['cantidad']?.toString() ?? '0';
+                final unidad = item['unidad']?.toString() ?? '';
+
+                return Chip(
+                  avatar: const Icon(Icons.inventory_2_outlined, size: 16),
+                  label: Text('$producto: $cantidad $unidad'.trim()),
+                );
+              }).toList(),
+            ),
+        ],
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> _leerMercaderiaParada(
+    Map<String, dynamic> parada,
+  ) {
+    final mercaderia = parada['mercaderia'];
+    if (mercaderia is! List) {
+      return const [];
+    }
+
+    return mercaderia
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList(growable: false);
   }
 }
 
@@ -4362,18 +4535,24 @@ class _PantallaCambioContrasenaObligatorioState
     final texto = mensaje?.toLowerCase() ?? '';
     if (texto.contains('password') ||
         texto.contains('contrasena') ||
+        texto.contains('contraseña') ||
         texto.contains('422')) {
-      return 'La nueva contrasena no cumple la politica de seguridad. Usa minimo 8 caracteres, una mayuscula, una minuscula y un numero.';
+      return 'La nueva contraseña no cumple la política de seguridad. Usa mínimo 8 caracteres, una mayúscula, una minúscula y un número.';
     }
 
-    return 'No se pudo cambiar la contrasena. ${mensaje ?? ''}'.trim();
+    return 'No se pudo cambiar la contraseña. ${mensaje ?? ''}'.trim();
   }
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final errorColor = colors.brightness == Brightness.dark
+        ? const Color(0xFFFFB4AB)
+        : const Color(0xFFB91C1C);
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Cambiar contrasena'),
+        title: const Text('Cambiar contraseña'),
         backgroundColor: Colors.green[800],
         foregroundColor: Colors.white,
         automaticallyImplyLeading: false,
@@ -4391,7 +4570,7 @@ class _PantallaCambioContrasenaObligatorioState
                   const Icon(Icons.lock_reset, size: 72, color: Colors.green),
                   const SizedBox(height: 24),
                   const Text(
-                    'Debes cambiar tu contrasena antes de continuar.',
+                    'Debes cambiar tu contraseña antes de continuar.',
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                     textAlign: TextAlign.center,
                   ),
@@ -4399,26 +4578,34 @@ class _PantallaCambioContrasenaObligatorioState
                   TextFormField(
                     controller: _passwordController,
                     decoration: InputDecoration(
-                      labelText: 'Nueva contrasena',
-                      prefixIcon: Icon(Icons.lock),
+                      labelText: 'Nueva contraseña',
+                      prefixIcon: const Icon(Icons.lock),
+                      errorStyle: TextStyle(
+                        color: errorColor,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                     obscureText: true,
                     validator: (v) => (v == null || v.trim().length < 8)
-                        ? 'Minimo 8 caracteres'
+                        ? 'Mínimo 8 caracteres'
                         : (!_contrasenaSegura(v.trim())
-                              ? 'Usa mayuscula, minuscula y numero'
+                              ? 'Usa mayúscula, minúscula y número'
                               : null),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _confirmPasswordController,
                     decoration: InputDecoration(
-                      labelText: 'Confirmar contrasena',
-                      prefixIcon: Icon(Icons.lock_outline),
+                      labelText: 'Confirmar contraseña',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      errorStyle: TextStyle(
+                        color: errorColor,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                     obscureText: true,
                     validator: (v) => (v != _passwordController.text)
-                        ? 'Las contrasenas no coinciden'
+                        ? 'Las contraseñas no coinciden'
                         : null,
                   ),
                   const SizedBox(height: 20),
@@ -4427,8 +4614,8 @@ class _PantallaCambioContrasenaObligatorioState
                       padding: const EdgeInsets.only(bottom: 12),
                       child: Text(
                         _errorMessage!,
-                        style: const TextStyle(
-                          color: Colors.red,
+                        style: TextStyle(
+                          color: errorColor,
                           fontWeight: FontWeight.bold,
                         ),
                         textAlign: TextAlign.center,
@@ -4443,7 +4630,7 @@ class _PantallaCambioContrasenaObligatorioState
                     child: _isSaving
                         ? const CircularProgressIndicator(color: Colors.white)
                         : const Text(
-                            'Guardar nueva contrasena',
+                            'Guardar nueva contraseña',
                             style: TextStyle(fontSize: 16),
                           ),
                   ),
@@ -4623,8 +4810,8 @@ class _PantallaLoginState extends State<PantallaLogin> {
                       prefixIcon: const Icon(Icons.lock),
                       suffixIcon: IconButton(
                         tooltip: _mostrarPassword
-                            ? 'Ocultar contrasena'
-                            : 'Mostrar contrasena',
+                            ? 'Ocultar contraseña'
+                            : 'Mostrar contraseña',
                         onPressed: () {
                           setState(() {
                             _mostrarPassword = !_mostrarPassword;
@@ -5084,19 +5271,19 @@ class _PantallaRegistroState extends State<PantallaRegistro> {
           TextFormField(
             controller: _passwordController,
             decoration: const InputDecoration(
-              labelText: 'Contrasena',
+              labelText: 'Contraseña',
               prefixIcon: Icon(Icons.lock),
             ),
             obscureText: true,
             validator: (v) {
               final valor = v?.trim() ?? '';
               if (valor.length < 8) {
-                return 'Minimo 8 caracteres';
+                return 'Mínimo 8 caracteres';
               }
               if (!RegExp(r'[A-Z]').hasMatch(valor) ||
                   !RegExp(r'[a-z]').hasMatch(valor) ||
                   !RegExp(r'[0-9]').hasMatch(valor)) {
-                return 'Usa mayuscula, minuscula y numero';
+                return 'Usa mayúscula, minúscula y número';
               }
               return null;
             },

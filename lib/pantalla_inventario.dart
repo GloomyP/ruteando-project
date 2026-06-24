@@ -17,6 +17,7 @@ const String _iconoBotellaPack = 'imagenes/icono_botella_pack.png';
 const String _iconoBotellaCaja = 'imagenes/icono_botella_caja.png';
 const String _iconoBotellaUnidad = 'imagenes/icono_botella_unidad.png';
 const String _iconoAccesorio = 'imagenes/icono_accesorio.png';
+const String _iconoPrecio = 'imagenes/icono_precio.png';
 
 String _formatearPrecioUnidad(int precio) {
   final texto = precio.abs().toString();
@@ -1070,6 +1071,13 @@ class _InventarioContenido extends StatelessWidget {
           onRegistrarMovimiento: onRegistrarMovimiento,
         ),
         const SizedBox(height: 20),
+        _ProductosInventarioSection(
+          productos: productos,
+          categorias: categorias,
+          onEditar: onEditar,
+          onEliminar: onEliminar,
+        ),
+        const SizedBox(height: 20),
         _TituloSeccion(
           titulo: 'Historial de movimientos',
           accion: FilledButton.icon(
@@ -1100,13 +1108,6 @@ class _InventarioContenido extends StatelessWidget {
               onEliminar: () => onEliminarMovimiento(movimiento),
             ),
           ),
-        const SizedBox(height: 20),
-        _ProductosInventarioSection(
-          productos: productos,
-          categorias: categorias,
-          onEditar: onEditar,
-          onEliminar: onEliminar,
-        ),
       ],
     );
   }
@@ -1799,7 +1800,7 @@ class _ProductoInventarioCard extends StatelessWidget {
                 ),
                 _InfoChip(icon: Icons.straighten, label: producto.unidad),
                 _InfoChip(
-                  icon: Icons.sell_outlined,
+                  assetIcon: _iconoPrecio,
                   label:
                       'Precio: ${_formatearPrecioUnidad(producto.precioUnidad)}',
                 ),
@@ -1851,9 +1852,11 @@ class _ProductoInventarioCard extends StatelessWidget {
 }
 
 class _InfoChip extends StatelessWidget {
-  const _InfoChip({required this.icon, required this.label});
+  const _InfoChip({this.icon, this.assetIcon, required this.label})
+    : assert(icon != null || assetIcon != null);
 
-  final IconData icon;
+  final IconData? icon;
+  final String? assetIcon;
   final String label;
 
   @override
@@ -1861,7 +1864,22 @@ class _InfoChip extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
 
     return Chip(
-      avatar: Icon(icon, size: 16, color: colors.onSurfaceVariant),
+      avatar: assetIcon == null
+          ? Icon(icon, size: 16, color: colors.onSurfaceVariant)
+          : Image.asset(
+              assetIcon!,
+              width: 16,
+              height: 16,
+              color: colors.onSurfaceVariant,
+              colorBlendMode: BlendMode.srcIn,
+              errorBuilder: (context, error, stackTrace) {
+                return Icon(
+                  Icons.sell_outlined,
+                  size: 16,
+                  color: colors.onSurfaceVariant,
+                );
+              },
+            ),
       label: Text(label),
       labelStyle: TextStyle(
         color: colors.onSurface,
