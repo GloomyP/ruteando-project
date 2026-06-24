@@ -258,6 +258,7 @@ class _RuteandoAppState extends State<RuteandoApp> {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
         fontFamily: 'NotoSans',
+        fontFamilyFallback: const ['NotoSansSymbols2'],
         scaffoldBackgroundColor: Colors.transparent,
         useMaterial3: true,
         cardTheme: const CardThemeData(
@@ -311,6 +312,7 @@ class _RuteandoAppState extends State<RuteandoApp> {
           brightness: Brightness.dark,
         ),
         fontFamily: 'NotoSans',
+        fontFamilyFallback: const ['NotoSansSymbols2'],
         scaffoldBackgroundColor: Colors.transparent,
         useMaterial3: true,
         cardTheme: const CardThemeData(
