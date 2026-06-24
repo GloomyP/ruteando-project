@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'menu_drawer.dart';
+import 'models/producto_inventario.dart';
 import 'persistencia_rutas.dart';
 import 'pantalla_ruta.dart';
 import 'pantalla_asignacion_ruta.dart';
@@ -2734,6 +2735,7 @@ class PantallaEstadoEntregas extends StatefulWidget {
 
 class _PantallaEstadoEntregasState extends State<PantallaEstadoEntregas> {
   late Future<List<Map<String, dynamic>>> _historialFuture;
+  Map<String, ProductoInventario> _productosPorId = {};
 
   @override
   void initState() {
@@ -2753,6 +2755,15 @@ class _PantallaEstadoEntregasState extends State<PantallaEstadoEntregas> {
   Future<List<Map<String, dynamic>>> _cargarHistorial() async {
     final email = _driverEmail;
     final historial = await cargarHistorialRutasTerminadas();
+    try {
+      final productos = await InventarioService().listarProductos();
+      _productosPorId = {
+        for (final producto in productos)
+          if (producto.id.isNotEmpty) producto.id: producto,
+      };
+    } catch (_) {
+      _productosPorId = {};
+    }
     final filtrado = historial.where((ruta) {
       final repartidorEmail = ruta['repartidorEmail']
           ?.toString()
@@ -2841,7 +2852,10 @@ class _PantallaEstadoEntregasState extends State<PantallaEstadoEntregas> {
                   );
                 }
 
-                return _EntregaHistorialCard(ruta: historial[index - 1]);
+                return _EntregaHistorialCard(
+                  ruta: historial[index - 1],
+                  productosPorId: _productosPorId,
+                );
               },
             );
           },
@@ -2852,9 +2866,13 @@ class _PantallaEstadoEntregasState extends State<PantallaEstadoEntregas> {
 }
 
 class _EntregaHistorialCard extends StatelessWidget {
-  const _EntregaHistorialCard({required this.ruta});
+  const _EntregaHistorialCard({
+    required this.ruta,
+    required this.productosPorId,
+  });
 
   final Map<String, dynamic> ruta;
+  final Map<String, ProductoInventario> productosPorId;
 
   @override
   Widget build(BuildContext context) {
@@ -2977,6 +2995,7 @@ class _EntregaHistorialCard extends StatelessWidget {
                   return _ParadaHistorialDetalle(
                     index: entry.key,
                     parada: Map<String, dynamic>.from(parada),
+                    productosPorId: productosPorId,
                   );
                 }).toList(),
               ),
@@ -3013,10 +3032,15 @@ class _EntregaHistorialCard extends StatelessWidget {
 }
 
 class _ParadaHistorialDetalle extends StatelessWidget {
-  const _ParadaHistorialDetalle({required this.index, required this.parada});
+  const _ParadaHistorialDetalle({
+    required this.index,
+    required this.parada,
+    required this.productosPorId,
+  });
 
   final int index;
   final Map<String, dynamic> parada;
+  final Map<String, ProductoInventario> productosPorId;
 
   @override
   Widget build(BuildContext context) {
@@ -3088,10 +3112,16 @@ class _ParadaHistorialDetalle extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: mercaderia.map((item) {
+                final productoId = item['productoId']?.toString() ?? '';
                 final producto =
-                    item['productoNombre']?.toString() ?? 'Producto';
+                    productosPorId[productoId]?.nombre ??
+                    item['productoNombre']?.toString() ??
+                    'Producto';
                 final cantidad = item['cantidad']?.toString() ?? '0';
-                final unidad = item['unidad']?.toString() ?? '';
+                final unidad =
+                    productosPorId[productoId]?.unidad ??
+                    item['unidad']?.toString() ??
+                    '';
 
                 return Chip(
                   avatar: const Icon(Icons.inventory_2_outlined, size: 16),
@@ -3642,6 +3672,11 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      onDrawerChanged: (isOpened) {
+        if (isOpened) {
+          liberarFocoPlataforma();
+        }
+      },
       appBar: AppBar(
         title: const Text('Mi ruta asignada'),
         backgroundColor: Colors.green[800],
