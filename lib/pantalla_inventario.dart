@@ -179,6 +179,7 @@ class _PantallaInventarioState extends State<PantallaInventario> {
                           onGuardarStock: _abrirFormularioStockRepartidor,
                           onRegistrarMovimiento: () =>
                               _abrirFormularioMovimiento(productos),
+                          onEliminarMovimiento: _confirmarEliminarMovimiento,
                         ),
                       ),
                     ),
@@ -916,6 +917,69 @@ class _PantallaInventarioState extends State<PantallaInventario> {
     }
   }
 
+  Future<void> _confirmarEliminarMovimiento(
+    MovimientoInventario movimiento,
+  ) async {
+    final esAjuste = movimiento.tipo == 'Ajuste';
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Eliminar movimiento'),
+          content: Text(
+            esAjuste
+                ? 'Seguro que quieres eliminar este ajuste del historial? El stock actual no se modificara.'
+                : 'Seguro que quieres eliminar este movimiento? Se revertira su efecto en el stock del producto.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Eliminar'),
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmar != true) {
+      return;
+    }
+
+    try {
+      await _inventarioService.eliminarMovimiento(movimiento);
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Movimiento eliminado correctamente'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'No se pudo eliminar el movimiento: ${_mensajeErrorAmigable(e)}',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   String? _validarTextoObligatorio(String? valor) {
     if (valor == null || valor.trim().isEmpty) {
       return 'Campo obligatorio';
@@ -951,6 +1015,7 @@ class _InventarioContenido extends StatelessWidget {
     required this.onEliminar,
     required this.onGuardarStock,
     required this.onRegistrarMovimiento,
+    required this.onEliminarMovimiento,
   });
 
   final List<ProductoInventario> productos;
@@ -964,6 +1029,7 @@ class _InventarioContenido extends StatelessWidget {
   final ValueChanged<ProductoInventario> onEliminar;
   final ValueChanged<StockRepartidorInventario?> onGuardarStock;
   final VoidCallback onRegistrarMovimiento;
+  final ValueChanged<MovimientoInventario> onEliminarMovimiento;
 
   @override
   Widget build(BuildContext context) {
@@ -1040,7 +1106,10 @@ class _InventarioContenido extends StatelessWidget {
           )
         else
           ...movimientos.map(
-            (movimiento) => _MovimientoInventarioCard(movimiento: movimiento),
+            (movimiento) => _MovimientoInventarioCard(
+              movimiento: movimiento,
+              onEliminar: () => onEliminarMovimiento(movimiento),
+            ),
           ),
       ],
     );
@@ -1576,9 +1645,13 @@ class _StockRepartidorCard extends StatelessWidget {
 }
 
 class _MovimientoInventarioCard extends StatelessWidget {
-  const _MovimientoInventarioCard({required this.movimiento});
+  const _MovimientoInventarioCard({
+    required this.movimiento,
+    required this.onEliminar,
+  });
 
   final MovimientoInventario movimiento;
+  final VoidCallback onEliminar;
 
   @override
   Widget build(BuildContext context) {
@@ -1617,17 +1690,28 @@ class _MovimientoInventarioCard extends StatelessWidget {
           ),
         ),
         isThreeLine: true,
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              movimiento.tipo,
-              style: TextStyle(color: color, fontWeight: FontWeight.w800),
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  movimiento.tipo,
+                  style: TextStyle(color: color, fontWeight: FontWeight.w800),
+                ),
+                Text(
+                  movimiento.cantidad.toString(),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
             ),
-            Text(
-              movimiento.cantidad.toString(),
-              style: const TextStyle(fontWeight: FontWeight.bold),
+            const SizedBox(width: 8),
+            IconButton(
+              tooltip: 'Eliminar movimiento',
+              onPressed: onEliminar,
+              icon: const Icon(Icons.delete_outline, color: Color(0xFFDC2626)),
             ),
           ],
         ),

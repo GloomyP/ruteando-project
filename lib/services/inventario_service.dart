@@ -49,6 +49,10 @@ class InventarioService {
     return cargarConductoresVinculados();
   }
 
+  Future<List<ProductoInventario>> listarProductos() {
+    return _cargarProductos();
+  }
+
   Future<void> crearProducto(ProductoInventario producto) async {
     final id = producto.id.isNotEmpty
         ? producto.id
@@ -163,6 +167,48 @@ class InventarioService {
     _notificarCambios();
   }
 
+  Future<void> eliminarMovimiento(MovimientoInventario movimiento) async {
+    if (movimiento.id.trim().isEmpty) {
+      throw StateError('El movimiento seleccionado no tiene identificador.');
+    }
+
+    final productos = await _cargarProductos();
+    final index = productos.indexWhere(
+      (producto) => producto.id == movimiento.productoId,
+    );
+
+    if (index >= 0 && movimiento.tipo != 'Ajuste') {
+      final producto = productos[index];
+      final nuevoStock = _calcularStockAlEliminarMovimiento(
+        stockActual: producto.stockActual,
+        tipo: movimiento.tipo,
+        cantidad: movimiento.cantidad,
+      );
+      if (nuevoStock < 0) {
+        throw StateError(
+          'Eliminar el movimiento dejaria el stock en negativo.',
+        );
+      }
+
+      await _guardarProducto(
+        producto.copyWith(
+          stockActual: nuevoStock,
+          estado: _estadoParaStock(nuevoStock, producto.stockMinimo),
+          actualizadoEn: DateTime.now(),
+        ),
+      );
+    }
+
+    await supabaseRest.delete(
+      'inventario_movimientos',
+      filters: {
+        'empresa_key': SupabaseConfig.eq(await empresaOperativaKey()),
+        'id': SupabaseConfig.eq(movimiento.id),
+      },
+    );
+    _notificarCambios();
+  }
+
   Future<List<ProductoInventario>> _cargarProductos() async {
     final rows = await supabaseRest.select(
       'inventario_productos',
@@ -228,6 +274,22 @@ class InventarioService {
     }
 
     return cantidad;
+  }
+
+  int _calcularStockAlEliminarMovimiento({
+    required int stockActual,
+    required String tipo,
+    required int cantidad,
+  }) {
+    if (tipo == 'Entrada' || tipo == 'Devolucion') {
+      return stockActual - cantidad;
+    }
+
+    if (tipo == 'Salida' || tipo == 'Dano' || tipo == 'Perdida') {
+      return stockActual + cantidad;
+    }
+
+    return stockActual;
   }
 
   String _estadoParaStock(int stockActual, int stockMinimo) {

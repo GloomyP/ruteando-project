@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'models/movimiento_inventario.dart';
+import 'models/producto_inventario.dart';
 import 'roles.dart';
 import 'persistencia_rutas.dart';
+import 'services/inventario_service.dart';
 import 'widgets/campana_notificaciones_admin.dart';
 import 'widgets/menu_perfil_appbar.dart';
 
@@ -208,12 +211,16 @@ class _TimelineEntregaItem extends StatelessWidget {
     required this.index,
     required this.texto,
     required this.estado,
+    required this.mercaderia,
+    required this.onAgregarMercaderia,
     this.fechaEntrega,
   });
 
   final int index;
   final String texto;
   final String estado;
+  final List<Map<String, dynamic>> mercaderia;
+  final VoidCallback onAgregarMercaderia;
   final String? fechaEntrega;
 
   @override
@@ -279,8 +286,38 @@ class _TimelineEntregaItem extends StatelessWidget {
                       _EstadoChip(estado: estado, icono: icono, color: color),
                       if (fechaEntrega != null)
                         _HoraEntregaChip(fechaEntrega: fechaEntrega!),
+                      OutlinedButton.icon(
+                        onPressed: onAgregarMercaderia,
+                        icon: const Icon(Icons.add_shopping_cart, size: 16),
+                        label: const Text('Añadir mercadería'),
+                        style: OutlinedButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
+                  if (mercaderia.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: mercaderia.map((item) {
+                        final producto =
+                            item['productoNombre']?.toString() ?? 'Producto';
+                        final cantidad = item['cantidad']?.toString() ?? '0';
+                        final unidad = item['unidad']?.toString() ?? '';
+                        return Chip(
+                          avatar: const Icon(Icons.inventory_2, size: 14),
+                          label: Text('$producto: $cantidad $unidad'.trim()),
+                          visualDensity: VisualDensity.compact,
+                        );
+                      }).toList(),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -377,6 +414,7 @@ class PantallaAsignacionRuta extends StatefulWidget {
 class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
   List<Map<String, dynamic>> _asignaciones = [];
   bool _cargando = true;
+  final InventarioService _inventarioService = InventarioService();
 
   @override
   void initState() {
@@ -683,6 +721,244 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
         backgroundColor: Colors.green,
       ),
     );
+  }
+
+  Future<void> _abrirFormularioMercaderia({
+    required Map<String, dynamic> asignacion,
+    required int paradaIndex,
+  }) async {
+    List<ProductoInventario> productos;
+    try {
+      productos = await _inventarioService.listarProductos();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo cargar el inventario: ${_mensajeError(e)}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    productos = productos
+        .where((producto) => producto.id.isNotEmpty)
+        .toList(growable: false);
+
+    if (!mounted) return;
+    if (productos.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Primero registra productos en inventario.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    ProductoInventario productoSeleccionado = productos.first;
+    var cantidadSeleccionada = 0;
+    final formKey = GlobalKey<FormState>();
+
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Añadir mercaderia'),
+              content: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    DropdownButtonFormField<ProductoInventario>(
+                      initialValue: productoSeleccionado,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Producto',
+                        isDense: true,
+                      ),
+                      items: productos.map((producto) {
+                        return DropdownMenuItem<ProductoInventario>(
+                          value: producto,
+                          child: Text(
+                            '${producto.nombre} (${producto.stockActual} ${producto.unidad})',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (producto) {
+                        if (producto == null) return;
+                        setDialogState(() => productoSeleccionado = producto);
+                      },
+                    ),
+                    const SizedBox(height: 14),
+                    TextFormField(
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'Cantidad',
+                        helperText:
+                            'Disponible: ${productoSeleccionado.stockActual} ${productoSeleccionado.unidad}',
+                        isDense: true,
+                      ),
+                      onChanged: (value) {
+                        cantidadSeleccionada = int.tryParse(value.trim()) ?? 0;
+                      },
+                      validator: (value) {
+                        final cantidad = int.tryParse(value?.trim() ?? '');
+                        if (cantidad == null || cantidad <= 0) {
+                          return 'Ingresa una cantidad valida.';
+                        }
+                        if (cantidad > productoSeleccionado.stockActual) {
+                          return 'No hay stock suficiente.';
+                        }
+                        return null;
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    if (formKey.currentState?.validate() != true) return;
+                    Navigator.of(dialogContext).pop(true);
+                  },
+                  child: const Text('Guardar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (confirmar != true || cantidadSeleccionada <= 0) {
+      return;
+    }
+
+    await _guardarMercaderiaParada(
+      asignacion: asignacion,
+      paradaIndex: paradaIndex,
+      producto: productoSeleccionado,
+      cantidad: cantidadSeleccionada,
+    );
+  }
+
+  Future<void> _guardarMercaderiaParada({
+    required Map<String, dynamic> asignacion,
+    required int paradaIndex,
+    required ProductoInventario producto,
+    required int cantidad,
+  }) async {
+    final email = asignacion['repartidorEmail']?.toString() ?? '';
+    final nombre = asignacion['repartidorNombre']?.toString() ?? 'Repartidor';
+    final paradas = (asignacion['paradas'] as List? ?? [])
+        .map((parada) => Map<String, dynamic>.from(parada as Map))
+        .toList();
+
+    if (email.trim().isEmpty ||
+        paradaIndex < 0 ||
+        paradaIndex >= paradas.length) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo identificar la parada seleccionada.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final parada = paradas[paradaIndex];
+    final textoParada = parada['texto']?.toString() ?? 'Parada';
+
+    try {
+      await _inventarioService.registrarMovimiento(
+        MovimientoInventario(
+          id: '',
+          productoId: producto.id,
+          productoNombre: producto.nombre,
+          tipo: 'Salida',
+          cantidad: cantidad,
+          responsable: nombre,
+          email: email,
+          observacion: 'Mercaderia para parada: $textoParada',
+        ),
+      );
+
+      final mercaderia = _leerMercaderia(parada['mercaderia']);
+      mercaderia.add({
+        'productoId': producto.id,
+        'productoNombre': producto.nombre,
+        'cantidad': cantidad,
+        'unidad': producto.unidad,
+        'fecha': DateTime.now().toIso8601String(),
+      });
+      parada['mercaderia'] = mercaderia;
+
+      final asignacionActualizada = Map<String, dynamic>.from(asignacion)
+        ..['paradas'] = paradas;
+
+      await guardarRutaAsignada(email, asignacionActualizada);
+
+      final asignaciones = await cargarAsignacionesGlobales();
+      final emailNormalizado = email.toLowerCase().trim();
+      final index = asignaciones.indexWhere((item) {
+        final itemEmail = item['repartidorEmail']
+            ?.toString()
+            .toLowerCase()
+            .trim();
+        return itemEmail == emailNormalizado;
+      });
+      if (index >= 0) {
+        asignaciones[index] = asignacionActualizada;
+      } else {
+        asignaciones.add(asignacionActualizada);
+      }
+      await guardarAsignacionesGlobales(asignaciones);
+      await _cargarDatos();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${producto.nombre} agregado y descontado del inventario.',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo añadir mercaderia: ${_mensajeError(e)}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  List<Map<String, dynamic>> _leerMercaderia(dynamic valor) {
+    if (valor is! List) {
+      return [];
+    }
+
+    return valor
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
+  String _mensajeError(Object error) {
+    final mensaje = error.toString().replaceFirst('Exception: ', '');
+    return mensaje.replaceFirst('Bad state: ', '');
   }
 
   void _abrirPantalla(BuildContext context, String ruta) async {
@@ -1123,6 +1399,11 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
                         index: idx,
                         texto: texto,
                         estado: estado,
+                        mercaderia: _leerMercaderia(parada['mercaderia']),
+                        onAgregarMercaderia: () => _abrirFormularioMercaderia(
+                          asignacion: asignacion,
+                          paradaIndex: idx,
+                        ),
                         fechaEntrega: fechaEntrega,
                       );
                     }).toList(),
