@@ -12,6 +12,37 @@ import 'widgets/menu_perfil_appbar.dart';
 const String _categoriaTodas = 'Todas';
 const String _ordenNombre = 'Nombre';
 const String _ordenCategoria = 'Categoria';
+const String _iconoBidon = 'imagenes/icono_bidon.png';
+const String _iconoBotellaPack = 'imagenes/icono_botella_pack.png';
+const String _iconoBotellaCaja = 'imagenes/icono_botella_caja.png';
+const String _iconoBotellaUnidad = 'imagenes/icono_botella_unidad.png';
+const String _iconoAccesorio = 'imagenes/icono_accesorio.png';
+
+String _iconoProducto(ProductoInventario producto) {
+  final categoria = producto.categoria.trim().toLowerCase().replaceAll(
+    'ó',
+    'o',
+  );
+  final unidad = producto.unidad.trim().toLowerCase();
+
+  if (categoria == 'bidon' || categoria == 'bidones') {
+    return _iconoBidon;
+  }
+
+  if (categoria == 'botella' || categoria == 'botellas') {
+    if (unidad == 'pack') {
+      return _iconoBotellaPack;
+    }
+
+    if (unidad == 'caja') {
+      return _iconoBotellaCaja;
+    }
+
+    return _iconoBotellaUnidad;
+  }
+
+  return _iconoAccesorio;
+}
 
 class PantallaInventario extends StatefulWidget {
   const PantallaInventario({super.key});
@@ -1654,6 +1685,7 @@ class _ProductoInventarioCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final estado = producto.estadoCalculado;
     final colorEstado = _colorEstado(estado);
+    final iconoProducto = _iconoProducto(producto);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1672,10 +1704,25 @@ class _ProductoInventarioCard extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CircleAvatar(
-                  backgroundColor: Colors.green.withValues(alpha: 0.12),
-                  foregroundColor: Colors.green[800],
-                  child: const Icon(Icons.water_drop_outlined),
+                Container(
+                  width: 52,
+                  height: 52,
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Image.asset(
+                    iconoProducto,
+                    semanticLabel: 'Icono de ${producto.categoria}',
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Icon(
+                        Icons.inventory_2_outlined,
+                        color: Colors.green[800],
+                      );
+                    },
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
