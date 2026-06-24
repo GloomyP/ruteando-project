@@ -9,6 +9,7 @@ class ProductoInventario {
     required this.stockActual,
     required this.stockMinimo,
     required this.unidad,
+    required this.precioUnidad,
     required this.estado,
     this.creadoEn,
     this.actualizadoEn,
@@ -21,6 +22,7 @@ class ProductoInventario {
   final int stockActual;
   final int stockMinimo;
   final String unidad;
+  final int precioUnidad;
   final String estado;
   final DateTime? creadoEn;
   final DateTime? actualizadoEn;
@@ -45,6 +47,7 @@ class ProductoInventario {
     int? stockActual,
     int? stockMinimo,
     String? unidad,
+    int? precioUnidad,
     String? estado,
     DateTime? creadoEn,
     DateTime? actualizadoEn,
@@ -57,6 +60,7 @@ class ProductoInventario {
       stockActual: stockActual ?? this.stockActual,
       stockMinimo: stockMinimo ?? this.stockMinimo,
       unidad: unidad ?? this.unidad,
+      precioUnidad: precioUnidad ?? this.precioUnidad,
       estado: estado ?? this.estado,
       creadoEn: creadoEn ?? this.creadoEn,
       actualizadoEn: actualizadoEn ?? this.actualizadoEn,
@@ -72,6 +76,7 @@ class ProductoInventario {
       stockActual: _leerEntero(data['stockActual']),
       stockMinimo: _leerEntero(data['stockMinimo']),
       unidad: data['unidad']?.toString() ?? '',
+      precioUnidad: _leerEntero(data['precioUnidad']),
       estado: data['estado']?.toString() ?? '',
       creadoEn: _leerFecha(data['creadoEn']),
       actualizadoEn: _leerFecha(data['actualizadoEn'] ?? data['actualizado']),
@@ -87,6 +92,7 @@ class ProductoInventario {
       'stockActual': stockActual,
       'stockMinimo': stockMinimo,
       'unidad': unidad,
+      'precioUnidad': precioUnidad,
       'estado': estadoCalculado,
       'creadoEn': creadoEn?.toIso8601String(),
       'actualizadoEn': actualizadoEn?.toIso8601String(),

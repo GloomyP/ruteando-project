@@ -87,10 +87,14 @@ create table if not exists public.inventario_productos (
   "stockActual" integer not null default 0,
   "stockMinimo" integer not null default 0,
   unidad text,
+  "precioUnidad" integer not null default 0,
   estado text,
   actualizado timestamptz default now(),
   primary key (empresa_key, id)
 );
+
+alter table if exists public.inventario_productos
+  add column if not exists "precioUnidad" integer not null default 0;
 
 create table if not exists public.inventario_stock_repartidores (
   empresa_key text not null,

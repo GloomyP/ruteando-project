@@ -258,6 +258,7 @@ class InventarioService {
       'stockActual': producto.stockActual,
       'stockMinimo': producto.stockMinimo,
       'unidad': producto.unidad,
+      'precioUnidad': producto.precioUnidad,
       'estado': producto.estadoCalculado,
       'actualizado': DateTime.now().toIso8601String(),
     };

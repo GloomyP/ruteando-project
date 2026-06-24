@@ -18,6 +18,23 @@ const String _iconoBotellaCaja = 'imagenes/icono_botella_caja.png';
 const String _iconoBotellaUnidad = 'imagenes/icono_botella_unidad.png';
 const String _iconoAccesorio = 'imagenes/icono_accesorio.png';
 
+String _formatearPrecioUnidad(int precio) {
+  final texto = precio.abs().toString();
+  final buffer = StringBuffer();
+
+  for (var i = 0; i < texto.length; i++) {
+    final restantes = texto.length - i;
+    buffer.write(texto[i]);
+
+    if (restantes > 1 && (restantes - 1) % 3 == 0) {
+      buffer.write('.');
+    }
+  }
+
+  final signo = precio < 0 ? '-' : '';
+  return '$signo\$${buffer.toString()}';
+}
+
 String _iconoProducto(ProductoInventario producto) {
   final categoria = producto.categoria.trim().toLowerCase().replaceAll(
     'ó',
@@ -211,6 +228,9 @@ class _PantallaInventarioState extends State<PantallaInventario> {
     final stockMinimoController = TextEditingController(
       text: producto?.stockMinimo.toString(),
     );
+    final precioUnidadController = TextEditingController(
+      text: producto?.precioUnidad.toString(),
+    );
 
     String? categoriaSeleccionada = _categorias.contains(producto?.categoria)
         ? producto?.categoria
@@ -236,6 +256,9 @@ class _PantallaInventarioState extends State<PantallaInventario> {
 
               final stockActual = int.parse(stockActualController.text.trim());
               final stockMinimo = int.parse(stockMinimoController.text.trim());
+              final precioUnidad = int.parse(
+                precioUnidadController.text.trim(),
+              );
               final productoGuardado = ProductoInventario(
                 id: producto?.id ?? '',
                 nombre: nombreController.text.trim(),
@@ -244,6 +267,7 @@ class _PantallaInventarioState extends State<PantallaInventario> {
                 stockActual: stockActual,
                 stockMinimo: stockMinimo,
                 unidad: unidadSeleccionada!,
+                precioUnidad: precioUnidad,
                 estado: '',
                 creadoEn: producto?.creadoEn,
                 actualizadoEn: producto?.actualizadoEn,
@@ -365,6 +389,11 @@ class _PantallaInventarioState extends State<PantallaInventario> {
                               label: 'Stock minimo',
                               icon: Icons.warning_amber,
                             ),
+                            _CampoCantidadConfig(
+                              controller: precioUnidadController,
+                              label: 'Precio por unidad',
+                              icon: Icons.attach_money,
+                            ),
                           ],
                           validator: _validarNumeroNoNegativo,
                         ),
@@ -429,6 +458,7 @@ class _PantallaInventarioState extends State<PantallaInventario> {
     descripcionController.dispose();
     stockActualController.dispose();
     stockMinimoController.dispose();
+    precioUnidadController.dispose();
   }
 
   Future<void> _abrirFormularioStockRepartidor([
@@ -1887,6 +1917,11 @@ class _ProductoInventarioCard extends StatelessWidget {
                   label: 'Minimo: ${producto.stockMinimo}',
                 ),
                 _InfoChip(icon: Icons.straighten, label: producto.unidad),
+                _InfoChip(
+                  icon: Icons.attach_money,
+                  label:
+                      'Precio: ${_formatearPrecioUnidad(producto.precioUnidad)}',
+                ),
                 Chip(
                   avatar: Icon(
                     _iconoEstado(estado),
