@@ -51,6 +51,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
   int _nextParadaId = 1;
 
   GoogleMapController? _mapController;
+  bool _mapGesturesEnabled = true;
 
   String _distanciaTotal = 'Sin ruta';
   String _tiempoTotal = 'Sin ruta';
@@ -591,6 +592,16 @@ class _PantallaRutaState extends State<PantallaRuta> {
     );
   }
 
+  void _setMapGesturesEnabled(bool enabled) {
+    if (_mapGesturesEnabled == enabled || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _mapGesturesEnabled = enabled;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -712,6 +723,10 @@ class _PantallaRutaState extends State<PantallaRuta> {
             ),
             markers: _markers,
             polylines: _polylines,
+            scrollGesturesEnabled: _mapGesturesEnabled,
+            zoomGesturesEnabled: _mapGesturesEnabled,
+            rotateGesturesEnabled: _mapGesturesEnabled,
+            tiltGesturesEnabled: _mapGesturesEnabled,
           ),
           // Overlay de carga sobre el mapa.
           if (_cargando)
@@ -797,150 +812,172 @@ class _PantallaRutaState extends State<PantallaRuta> {
           Positioned(
             top: 16,
             left: 12,
-            child: Align(
-              alignment: Alignment.topCenter,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: 320,
-                  maxHeight: MediaQuery.sizeOf(context).height * 0.58,
-                ),
-                child: Card(
-                  elevation: 8,
-                  child: Padding(
-                    padding: const EdgeInsets.all(10),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          TextField(
-                            controller: _origenController,
-                            textInputAction: TextInputAction.next,
-                            style: const TextStyle(fontSize: 13),
-                            decoration: InputDecoration(
-                              isDense: true,
-                              labelText: 'Origen',
-                              prefixIcon: const Icon(
-                                Icons.trip_origin,
-                                size: 20,
-                              ),
-                              suffixIcon: IconButton(
-                                tooltip: 'Usar ubicacion actual',
-                                onPressed: _obteniendoUbicacion
-                                    ? null
-                                    : _usarUbicacionActual,
-                                icon: _obteniendoUbicacion
-                                    ? const SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : const Icon(Icons.my_location, size: 20),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Theme(
-                            data: Theme.of(
-                              context,
-                            ).copyWith(dividerColor: Colors.transparent),
-                            child: ExpansionTile(
-                              tilePadding: EdgeInsets.zero,
-                              childrenPadding: EdgeInsets.zero,
-                              maintainState: true,
-                              initiallyExpanded: false,
-                              leading: const Icon(Icons.location_on, size: 20),
-                              title: Text(
-                                'Paradas (${_paradaControllers.length})',
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
+            child: MouseRegion(
+              onEnter: (_) => _setMapGesturesEnabled(false),
+              onExit: (_) => _setMapGesturesEnabled(true),
+              child: Listener(
+                behavior: HitTestBehavior.opaque,
+                onPointerDown: (_) => _setMapGesturesEnabled(false),
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: 320,
+                      maxHeight: MediaQuery.sizeOf(context).height * 0.58,
+                    ),
+                    child: Card(
+                      elevation: 8,
+                      child: Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: SingleChildScrollView(
+                          primary: false,
+                          physics: const ClampingScrollPhysics(),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              TextField(
+                                controller: _origenController,
+                                textInputAction: TextInputAction.next,
+                                style: const TextStyle(fontSize: 13),
+                                decoration: InputDecoration(
+                                  isDense: true,
+                                  labelText: 'Origen',
+                                  prefixIcon: const Icon(
+                                    Icons.trip_origin,
+                                    size: 20,
+                                  ),
+                                  suffixIcon: IconButton(
+                                    tooltip: 'Usar ubicacion actual',
+                                    onPressed: _obteniendoUbicacion
+                                        ? null
+                                        : _usarUbicacionActual,
+                                    icon: _obteniendoUbicacion
+                                        ? const SizedBox(
+                                            width: 18,
+                                            height: 18,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Icon(
+                                            Icons.my_location,
+                                            size: 20,
+                                          ),
+                                  ),
                                 ),
                               ),
-                              subtitle: const Text(
-                                'Toca para editar la lista',
-                                style: TextStyle(fontSize: 11),
-                              ),
-                              children: [
-                                const SizedBox(height: 8),
-                                ...List.generate(_paradaControllers.length, (
-                                  index,
-                                ) {
-                                  final esUltima =
-                                      index == _paradaControllers.length - 1;
-                                  return Padding(
-                                    padding: EdgeInsets.only(
-                                      bottom: esUltima ? 0 : 8,
+                              const SizedBox(height: 8),
+                              Theme(
+                                data: Theme.of(
+                                  context,
+                                ).copyWith(dividerColor: Colors.transparent),
+                                child: ExpansionTile(
+                                  tilePadding: EdgeInsets.zero,
+                                  childrenPadding: EdgeInsets.zero,
+                                  maintainState: true,
+                                  initiallyExpanded: false,
+                                  leading: const Icon(
+                                    Icons.location_on,
+                                    size: 20,
+                                  ),
+                                  title: Text(
+                                    'Paradas (${_paradaControllers.length})',
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
                                     ),
-                                    child: TextField(
-                                      controller: _paradaControllers[index],
-                                      textInputAction: esUltima
-                                          ? TextInputAction.done
-                                          : TextInputAction.next,
-                                      onSubmitted: esUltima
-                                          ? (_) => _generarRuta()
-                                          : null,
-                                      style: const TextStyle(fontSize: 13),
-                                      decoration: InputDecoration(
-                                        isDense: true,
-                                        labelText: 'Parada ${index + 1}',
-                                        contentPadding:
-                                            const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                              vertical: 12,
-                                            ),
-                                        prefixIcon: const Icon(
-                                          Icons.place,
-                                          size: 20,
-                                        ),
-                                        suffixIcon: IconButton(
-                                          tooltip: 'Eliminar parada',
-                                          onPressed: _cargando
-                                              ? null
-                                              : () => _quitarParada(index),
-                                          icon: const Icon(
-                                            Icons.remove_circle_outline,
+                                  ),
+                                  subtitle: const Text(
+                                    'Toca para editar la lista',
+                                    style: TextStyle(fontSize: 11),
+                                  ),
+                                  children: [
+                                    const SizedBox(height: 8),
+                                    ...List.generate(
+                                      _paradaControllers.length,
+                                      (index) {
+                                        final esUltima =
+                                            index ==
+                                            _paradaControllers.length - 1;
+                                        return Padding(
+                                          padding: EdgeInsets.only(
+                                            bottom: esUltima ? 0 : 8,
                                           ),
+                                          child: TextField(
+                                            controller:
+                                                _paradaControllers[index],
+                                            textInputAction: esUltima
+                                                ? TextInputAction.done
+                                                : TextInputAction.next,
+                                            onSubmitted: esUltima
+                                                ? (_) => _generarRuta()
+                                                : null,
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                            ),
+                                            decoration: InputDecoration(
+                                              isDense: true,
+                                              labelText: 'Parada ${index + 1}',
+                                              contentPadding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                    vertical: 12,
+                                                  ),
+                                              prefixIcon: const Icon(
+                                                Icons.place,
+                                                size: 20,
+                                              ),
+                                              suffixIcon: IconButton(
+                                                tooltip: 'Eliminar parada',
+                                                onPressed: _cargando
+                                                    ? null
+                                                    : () =>
+                                                          _quitarParada(index),
+                                                icon: const Icon(
+                                                  Icons.remove_circle_outline,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                    const SizedBox(height: 8),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: OutlinedButton.icon(
+                                        onPressed: _cargando
+                                            ? null
+                                            : _agregarParada,
+                                        icon: const Icon(
+                                          Icons.add_location_alt,
+                                          size: 18,
+                                        ),
+                                        label: const Text(
+                                          'Agregar parada',
+                                          style: TextStyle(fontSize: 13),
                                         ),
                                       ),
                                     ),
-                                  );
-                                }),
-                                const SizedBox(height: 8),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: OutlinedButton.icon(
-                                    onPressed: _cargando
-                                        ? null
-                                        : _agregarParada,
-                                    icon: const Icon(
-                                      Icons.add_location_alt,
-                                      size: 18,
-                                    ),
-                                    label: const Text(
-                                      'Agregar parada',
-                                      style: TextStyle(fontSize: 13),
-                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  _estado,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: Colors.grey[700],
+                                    fontSize: 11,
                                   ),
                                 ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              _estado,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: Colors.grey[700],
-                                fontSize: 11,
                               ),
-                            ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
