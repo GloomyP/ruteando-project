@@ -1238,7 +1238,7 @@ class _ProductosInventarioSectionState
           accion: Text(
             '${productosFiltrados.length} visibles',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Colors.grey[700],
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -1556,14 +1556,26 @@ class _TituloSeccion extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
     return Row(
       children: [
         Expanded(
           child: Text(
             titulo,
-            style: Theme.of(
-              context,
-            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              color: colors.onSurface,
+              fontWeight: FontWeight.bold,
+              shadows: colors.brightness == Brightness.dark
+                  ? const [
+                      Shadow(
+                        color: Colors.black87,
+                        blurRadius: 4,
+                        offset: Offset(0, 1),
+                      ),
+                    ]
+                  : null,
+            ),
           ),
         ),
         ?accion,
@@ -1620,7 +1632,9 @@ class _StockRepartidorCard extends StatelessWidget {
                       ),
                       Text(
                         stock.email,
-                        style: TextStyle(color: Colors.grey[700]),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ],
                   ),
@@ -1863,7 +1877,9 @@ class _ProductoInventarioCard extends StatelessWidget {
                             : producto.descripcion,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: Colors.grey[700]),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ],
                   ),
@@ -1977,12 +1993,17 @@ class _InfoChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
     return Chip(
-      avatar: Icon(icon, size: 16, color: Colors.grey[700]),
+      avatar: Icon(icon, size: 16, color: colors.onSurfaceVariant),
       label: Text(label),
-      labelStyle: const TextStyle(fontWeight: FontWeight.w600),
-      backgroundColor: const Color(0xFFF8FAF9),
-      side: const BorderSide(color: Color(0xFFE5E7EB)),
+      labelStyle: TextStyle(
+        color: colors.onSurface,
+        fontWeight: FontWeight.w600,
+      ),
+      backgroundColor: colors.surfaceContainerHighest,
+      side: BorderSide(color: colors.outlineVariant),
     );
   }
 }
@@ -2041,6 +2062,8 @@ class _EstadoVacio extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
     return Card(
       elevation: 2,
       color: Theme.of(context).cardTheme.color,
@@ -2053,12 +2076,12 @@ class _EstadoVacio extends StatelessWidget {
         padding: const EdgeInsets.all(24),
         child: Column(
           children: [
-            Icon(icon, size: 46, color: Colors.grey[400]),
+            Icon(icon, size: 46, color: colors.onSurfaceVariant),
             const SizedBox(height: 12),
             Text(
               mensaje,
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey[700]),
+              style: TextStyle(color: colors.onSurfaceVariant),
             ),
           ],
         ),

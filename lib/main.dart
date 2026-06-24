@@ -17,6 +17,7 @@ import 'services/supabase_auth_compat.dart';
 import 'services/supabase_rest_service.dart';
 import 'widgets/campana_notificaciones_admin.dart';
 import 'widgets/menu_perfil_appbar.dart';
+import 'widgets/telefono_form_field.dart';
 import 'web_focus_helper.dart'
     if (dart.library.html) 'web_focus_helper_web.dart';
 import 'dart:ui' as ui;
@@ -461,16 +462,23 @@ class _FondoGlobalApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fondo = _fondosPorRuta[rutaActual] ?? _fondoPorDefecto;
+    final isDark = Theme.of(context).colorScheme.brightness == Brightness.dark;
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        image: DecorationImage(
-          image: AssetImage(fondo),
-          fit: BoxFit.cover,
-          alignment: Alignment.center,
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            image: DecorationImage(
+              image: AssetImage(fondo),
+              fit: BoxFit.cover,
+              alignment: Alignment.center,
+            ),
+          ),
         ),
-      ),
-      child: child,
+        if (isDark) ColoredBox(color: Colors.black.withValues(alpha: 0.48)),
+        child,
+      ],
     );
   }
 }
@@ -725,7 +733,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
               ),
               ListTile(
                 leading: const Icon(Icons.assignment_outlined),
-                title: const Text('Asignacion de Ruta'),
+                title: const Text('Asignación de pedidos'),
                 onTap: () {
                   liberarFocoPlataforma();
                   Navigator.pop(context);
@@ -936,6 +944,7 @@ class _PantallaConductoresState extends State<PantallaConductores> {
   @override
   void initState() {
     super.initState();
+    _telefonoController.text = TelefonoFormatter.paisPorDefecto.prefijo;
     _cargarDatos();
   }
 
@@ -1144,6 +1153,7 @@ class _PantallaConductoresState extends State<PantallaConductores> {
     final nombre = _nombreController.text.trim();
     final rut = _rutController.text.trim();
     final correo = _normalizarCorreo(_correoController.text);
+    final telefono = TelefonoFormatter.normalizar(_telefonoController.text);
     final contrasenaTemporal = _generarContrasenaTemporal(nombre);
 
     if (_rutYaRegistrado(rut)) {
@@ -1158,7 +1168,7 @@ class _PantallaConductoresState extends State<PantallaConductores> {
       'nombre': nombre,
       'rut': rut,
       'correo': correo,
-      'telefono': _telefonoController.text.trim(),
+      'telefono': telefono,
       'empresa': _empresa?['rut'] ?? _empresaUsuarioKey(),
       'rol': RolUsuario.repartidor.valor,
       'contrasenaTemporal': contrasenaTemporal,
@@ -1211,7 +1221,7 @@ class _PantallaConductoresState extends State<PantallaConductores> {
         await actualizarTelefonoPerfilPorAdmin(
           email: correo,
           nombre: nombre,
-          telefono: _telefonoController.text.trim(),
+          telefono: telefono,
         );
       } catch (error) {
         debugPrint('No se pudo sincronizar el perfil del repartidor: $error');
@@ -1238,7 +1248,7 @@ class _PantallaConductoresState extends State<PantallaConductores> {
       _nombreController.clear();
       _rutController.clear();
       _correoController.clear();
-      _telefonoController.clear();
+      _telefonoController.text = TelefonoFormatter.paisPorDefecto.prefijo;
     });
     _mostrarMensajeExitoTemporal('Persona asociada correctamente a la empresa');
   }
@@ -1253,7 +1263,9 @@ class _PantallaConductoresState extends State<PantallaConductores> {
       text: repartidor['correo'] ?? '',
     );
     final telefonoController = TextEditingController(
-      text: repartidor['telefono'] ?? '',
+      text: TelefonoFormatter.formatearParaMostrar(
+        repartidor['telefono'] ?? '',
+      ),
     );
     final formKey = GlobalKey<FormState>();
     var rolSeleccionado = RolUsuario.desdeValor(repartidor['rol']);
@@ -1307,13 +1319,9 @@ class _PantallaConductoresState extends State<PantallaConductores> {
                         validator: _validarCorreo,
                       ),
                       const SizedBox(height: 12),
-                      TextFormField(
+                      TelefonoFormField(
                         controller: telefonoController,
-                        decoration: const InputDecoration(
-                          labelText: 'Telefono',
-                        ),
-                        keyboardType: TextInputType.phone,
-                        validator: _validarRequerido,
+                        labelText: 'Telefono',
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<RolUsuario>(
@@ -1369,7 +1377,9 @@ class _PantallaConductoresState extends State<PantallaConductores> {
                       'nombre': nombreController.text.trim(),
                       'rut': rutController.text.trim(),
                       'correo': correoController.text.trim(),
-                      'telefono': telefonoController.text.trim(),
+                      'telefono': TelefonoFormatter.normalizar(
+                        telefonoController.text,
+                      ),
                       'empresa': repartidor['empresa'] ?? _empresaUsuarioKey(),
                       'rol': rolSeleccionado.valor,
                       'contrasenaTemporal':
@@ -1487,6 +1497,8 @@ class _PantallaConductoresState extends State<PantallaConductores> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Repartidores'),
@@ -1512,17 +1524,18 @@ class _PantallaConductoresState extends State<PantallaConductores> {
                           color: Colors.green,
                         ),
                         const SizedBox(height: 24),
-                        const Text(
+                        Text(
                           'Registro de repartidores',
                           style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.w600,
+                            color: colors.onSurface,
                           ),
                         ),
                         const SizedBox(height: 8),
                         Text(
                           'Empresa: ${_empresa?['nombre'] ?? 'Usuario autenticado'}',
-                          style: const TextStyle(color: Colors.black54),
+                          style: TextStyle(color: colors.onSurfaceVariant),
                         ),
                         const SizedBox(height: 16),
                         _buildFormulario(),
@@ -1575,14 +1588,9 @@ class _PantallaConductoresState extends State<PantallaConductores> {
             validator: _validarCorreo,
           ),
           const SizedBox(height: 16),
-          TextFormField(
+          TelefonoFormField(
             controller: _telefonoController,
-            decoration: const InputDecoration(
-              labelText: 'Telefono',
-              prefixIcon: Icon(Icons.phone_outlined),
-            ),
-            keyboardType: TextInputType.phone,
-            validator: _validarRequerido,
+            labelText: 'Telefono',
           ),
           const SizedBox(height: 20),
           if (_mensajeError != null)
@@ -1627,20 +1635,26 @@ class _PantallaConductoresState extends State<PantallaConductores> {
   }
 
   Widget _buildListaConductores() {
+    final colors = Theme.of(context).colorScheme;
+
     if (_conductores.isEmpty) {
-      return const Text(
+      return Text(
         'No hay repartidores registrados.',
         textAlign: TextAlign.center,
-        style: TextStyle(color: Colors.black54),
+        style: TextStyle(color: colors.onSurfaceVariant),
       );
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text(
+        Text(
           'Repartidores registrados',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: colors.onSurface,
+          ),
         ),
         const SizedBox(height: 12),
         ..._conductores.asMap().entries.map((entry) {
@@ -1807,7 +1821,9 @@ class _PantallaRegistroEmpresaState extends State<PantallaRegistroEmpresa> {
       _nombreController.text = empresa['nombre'] ?? '';
       _rutController.text = empresa['rut'] ?? '';
       _correoController.text = empresa['correo'] ?? '';
-      _telefonoController.text = empresa['telefono'] ?? '';
+      _telefonoController.text = TelefonoFormatter.formatearParaMostrar(
+        empresa['telefono'] ?? '',
+      );
     });
   }
 
@@ -1824,7 +1840,7 @@ class _PantallaRegistroEmpresaState extends State<PantallaRegistroEmpresa> {
       'nombre': _nombreController.text.trim(),
       'rut': _rutController.text.trim(),
       'correo': _correoController.text.trim(),
-      'telefono': _telefonoController.text.trim(),
+      'telefono': TelefonoFormatter.normalizar(_telefonoController.text),
     };
 
     await _guardarEmpresaVinculada(empresa);
@@ -1953,14 +1969,9 @@ class _PantallaRegistroEmpresaState extends State<PantallaRegistroEmpresa> {
             validator: _validarCorreo,
           ),
           const SizedBox(height: 16),
-          TextFormField(
+          TelefonoFormField(
             controller: _telefonoController,
-            decoration: const InputDecoration(
-              labelText: 'Telefono de contacto',
-              prefixIcon: Icon(Icons.phone_outlined),
-            ),
-            keyboardType: TextInputType.phone,
-            validator: _validarRequerido,
+            labelText: 'Telefono de contacto',
           ),
           const SizedBox(height: 20),
           if (_mensajeError != null)
@@ -2543,21 +2554,27 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
   }
 
   Widget _buildEmptyState() {
+    final colors = Theme.of(context).colorScheme;
+
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const Icon(Icons.route_outlined, size: 96, color: Colors.grey),
         const SizedBox(height: 24),
-        const Text(
+        Text(
           'No tienes rutas asignadas',
-          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+          style: TextStyle(
+            color: colors.onSurface,
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+          ),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 12),
-        const Text(
+        Text(
           'Tu administrador de flota te asignará una ruta optimizada cuando esté disponible. Presiona Refrescar para comprobar.',
-          style: TextStyle(fontSize: 15, color: Colors.black54),
+          style: TextStyle(fontSize: 15, color: colors.onSurfaceVariant),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 24),

@@ -659,7 +659,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
                     ),
                     ListTile(
                       leading: const Icon(Icons.assignment_outlined),
-                      title: const Text('Asignacion de Ruta'),
+                      title: const Text('Asignación de pedidos'),
                       onTap: () => _abrirPantalla(context, '/asignacion-rutas'),
                     ),
                     ListTile(

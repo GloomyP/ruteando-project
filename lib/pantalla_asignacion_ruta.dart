@@ -212,6 +212,7 @@ class _TimelineEntregaItem extends StatelessWidget {
     required this.texto,
     required this.estado,
     required this.mercaderia,
+    required this.productosPorId,
     required this.onAgregarMercaderia,
     this.fechaEntrega,
   });
@@ -220,11 +221,13 @@ class _TimelineEntregaItem extends StatelessWidget {
   final String texto;
   final String estado;
   final List<Map<String, dynamic>> mercaderia;
+  final Map<String, ProductoInventario> productosPorId;
   final VoidCallback onAgregarMercaderia;
   final String? fechaEntrega;
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     final color = _colorEstadoEntrega(estado);
     final icono = _iconoEstadoEntrega(estado);
 
@@ -253,7 +256,7 @@ class _TimelineEntregaItem extends StatelessWidget {
                   ),
                 ),
               ),
-              Container(width: 2, height: 28, color: const Color(0xFFE5E7EB)),
+              Container(width: 2, height: 28, color: colors.outlineVariant),
             ],
           ),
           const SizedBox(width: 10),
@@ -261,9 +264,9 @@ class _TimelineEntregaItem extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFFF8FAF9),
+                color: colors.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFE5E7EB)),
+                border: Border.all(color: colors.outlineVariant),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -275,7 +278,7 @@ class _TimelineEntregaItem extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
-                    ),
+                    ).copyWith(color: colors.onSurface),
                   ),
                   const SizedBox(height: 8),
                   Wrap(
@@ -306,10 +309,16 @@ class _TimelineEntregaItem extends StatelessWidget {
                       spacing: 6,
                       runSpacing: 6,
                       children: mercaderia.map((item) {
+                        final productoId = item['productoId']?.toString() ?? '';
                         final producto =
-                            item['productoNombre']?.toString() ?? 'Producto';
+                            productosPorId[productoId]?.nombre ??
+                            item['productoNombre']?.toString() ??
+                            'Producto';
                         final cantidad = item['cantidad']?.toString() ?? '0';
-                        final unidad = item['unidad']?.toString() ?? '';
+                        final unidad =
+                            productosPorId[productoId]?.unidad ??
+                            item['unidad']?.toString() ??
+                            '';
                         return Chip(
                           avatar: const Icon(Icons.inventory_2, size: 14),
                           label: Text('$producto: $cantidad $unidad'.trim()),
@@ -413,6 +422,7 @@ class PantallaAsignacionRuta extends StatefulWidget {
 
 class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
   List<Map<String, dynamic>> _asignaciones = [];
+  Map<String, ProductoInventario> _productosPorId = {};
   bool _cargando = true;
   final InventarioService _inventarioService = InventarioService();
 
@@ -427,6 +437,15 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
 
     // Cargar asignaciones globales
     final asignacionesRaw = await cargarAsignacionesGlobales();
+    final productosPorId = <String, ProductoInventario>{};
+    try {
+      final productos = await _inventarioService.listarProductos();
+      for (final producto in productos) {
+        if (producto.id.isNotEmpty) {
+          productosPorId[producto.id] = producto;
+        }
+      }
+    } catch (_) {}
     final List<Map<String, dynamic>> asignacionesActualizadas = [];
 
     // Para cada asignación, buscar el estado real y más actualizado del conductor
@@ -455,6 +474,7 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
 
     setState(() {
       _asignaciones = asignacionesActualizadas;
+      _productosPorId = productosPorId;
       _cargando = false;
     });
   }
@@ -984,7 +1004,7 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Asignación de Rutas'),
+        title: const Text('Asignación de pedidos'),
         backgroundColor: Colors.green[800],
         foregroundColor: Colors.white,
         actions: [CampanaNotificacionesAdmin(), const MenuPerfilAppBar()],
@@ -1043,7 +1063,7 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
                     ),
                     ListTile(
                       leading: const Icon(Icons.assignment_outlined),
-                      title: const Text('Asignación de Ruta'),
+                      title: const Text('Asignación de pedidos'),
                       onTap: () => _abrirPantalla(context, '/asignacion-rutas'),
                     ),
                     ListTile(
@@ -1400,6 +1420,7 @@ class _PantallaAsignacionRutaState extends State<PantallaAsignacionRuta> {
                         texto: texto,
                         estado: estado,
                         mercaderia: _leerMercaderia(parada['mercaderia']),
+                        productosPorId: _productosPorId,
                         onAgregarMercaderia: () => _abrirFormularioMercaderia(
                           asignacion: asignacion,
                           paradaIndex: idx,

@@ -87,7 +87,7 @@ class AppMenuDrawer extends StatelessWidget {
                   ),
                   _DrawerRouteTile(
                     icon: Icons.assignment_outlined,
-                    title: 'Asignacion de Ruta',
+                    title: 'Asignación de pedidos',
                     selected: currentRoute == '/asignacion-rutas',
                     onTap: () => _abrirRuta(context, '/asignacion-rutas'),
                   ),

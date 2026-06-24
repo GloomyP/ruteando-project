@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'cierre_sesion.dart';
 import 'perfil_usuario.dart';
+import 'widgets/telefono_form_field.dart';
 
 const Map<String, List<String>> regionesComunas = {
   'Valparaíso': [
@@ -92,7 +93,9 @@ class _PantallaPerfilState extends State<PantallaPerfil> {
     setState(() {
       _perfil = perfil;
       _nombreController.text = perfil.nombre;
-      _telefonoController.text = perfil.telefono;
+      _telefonoController.text = TelefonoFormatter.formatearParaMostrar(
+        perfil.telefono,
+      );
       _regionSeleccionada = _regionValida(perfil.region);
       _comunaSeleccionada = _comunaValida(
         region: _regionSeleccionada,
@@ -125,7 +128,7 @@ class _PantallaPerfilState extends State<PantallaPerfil> {
     final perfilActualizado = PerfilUsuario(
       nombre: _nombreController.text.trim(),
       email: _perfil!.email,
-      telefono: _telefonoController.text.trim(),
+      telefono: TelefonoFormatter.normalizar(_telefonoController.text),
       region: _regionSeleccionada?.trim() ?? '',
       comuna: _comunaSeleccionada?.trim() ?? '',
       direccion: _direccionController.text.trim(),
@@ -301,13 +304,9 @@ class _PantallaPerfilState extends State<PantallaPerfil> {
           readOnly: true,
         ),
         const SizedBox(height: 12),
-        TextFormField(
+        TelefonoFormField(
           controller: _telefonoController,
-          decoration: const InputDecoration(
-            labelText: 'Telefono',
-            prefixIcon: Icon(Icons.phone_outlined),
-          ),
-          keyboardType: TextInputType.phone,
+          labelText: 'Telefono',
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(

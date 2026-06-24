@@ -48,6 +48,7 @@ class _TimelineEntregaItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     final color = _colorEstadoEntrega(estado);
     final icono = _iconoEstadoEntrega(estado);
 
@@ -76,7 +77,7 @@ class _TimelineEntregaItem extends StatelessWidget {
                   ),
                 ),
               ),
-              Container(width: 2, height: 28, color: const Color(0xFFE5E7EB)),
+              Container(width: 2, height: 28, color: colors.outlineVariant),
             ],
           ),
           const SizedBox(width: 10),
@@ -84,9 +85,9 @@ class _TimelineEntregaItem extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFFF8FAF9),
+                color: colors.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFE5E7EB)),
+                border: Border.all(color: colors.outlineVariant),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -98,7 +99,7 @@ class _TimelineEntregaItem extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
-                    ),
+                    ).copyWith(color: colors.onSurface),
                   ),
                   const SizedBox(height: 8),
                   Wrap(
