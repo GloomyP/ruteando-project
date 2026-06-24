@@ -1,4 +1,6 @@
 class ProductoInventario {
+  static const int limiteStockBajo = 10;
+
   const ProductoInventario({
     required this.id,
     required this.nombre,
@@ -28,7 +30,7 @@ class ProductoInventario {
       return 'No disponible';
     }
 
-    if (stockActual <= stockMinimo) {
+    if (stockActual <= limiteStockBajo) {
       return 'Stock bajo';
     }
 

@@ -4,11 +4,34 @@ import '../models/notificacion_interna.dart';
 import '../services/app_settings_service.dart';
 import '../services/notificaciones_service.dart';
 
-class CampanaNotificacionesAdmin extends StatelessWidget {
-  CampanaNotificacionesAdmin({super.key})
+class CampanaNotificacionesAdmin extends StatefulWidget {
+  const CampanaNotificacionesAdmin({super.key});
+
+  @override
+  State<CampanaNotificacionesAdmin> createState() =>
+      _CampanaNotificacionesAdminState();
+}
+
+class _CampanaNotificacionesAdminState
+    extends State<CampanaNotificacionesAdmin> {
+  final NotificacionesService _notificacionesService;
+
+  _CampanaNotificacionesAdminState()
     : _notificacionesService = NotificacionesService();
 
-  final NotificacionesService _notificacionesService;
+  Future<void> _marcarComoLeida(BuildContext popupContext, String id) async {
+    Navigator.of(popupContext).pop();
+    await _notificacionesService.marcarComoLeida(id);
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  Future<void> _marcarTodasComoLeidas(BuildContext popupContext) async {
+    Navigator.of(popupContext).pop();
+    await _notificacionesService.marcarTodasComoLeidas();
+    if (!mounted) return;
+    setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -40,13 +63,6 @@ class CampanaNotificacionesAdmin extends StatelessWidget {
               tooltip: 'Notificaciones',
               offset: const Offset(0, 12),
               constraints: const BoxConstraints(minWidth: 320, maxWidth: 380),
-              onSelected: (value) async {
-                if (value == '__marcar_todas__') {
-                  await _notificacionesService.marcarTodasComoLeidas();
-                  return;
-                }
-                await _notificacionesService.marcarComoLeida(value);
-              },
               itemBuilder: (context) {
                 return [
                   PopupMenuItem<String>(
@@ -65,21 +81,29 @@ class CampanaNotificacionesAdmin extends StatelessWidget {
                   else ...[
                     ...recientes.map((notificacion) {
                       return PopupMenuItem<String>(
-                        value: notificacion.leida ? null : notificacion.id,
-                        enabled: !notificacion.leida,
-                        child: _ItemNotificacion(notificacion: notificacion),
+                        enabled: false,
+                        child: _ItemNotificacion(
+                          notificacion: notificacion,
+                          onMarcarComoLeida: notificacion.leida
+                              ? null
+                              : () =>
+                                    _marcarComoLeida(context, notificacion.id),
+                        ),
                       );
                     }),
                     if (noLeidas > 0) ...[
                       const PopupMenuDivider(),
-                      const PopupMenuItem<String>(
-                        value: '__marcar_todas__',
-                        child: Row(
-                          children: [
-                            Icon(Icons.done_all_outlined, size: 18),
-                            SizedBox(width: 8),
-                            Text('Marcar todas como leidas'),
-                          ],
+                      PopupMenuItem<String>(
+                        enabled: false,
+                        child: TextButton.icon(
+                          onPressed: () => _marcarTodasComoLeidas(context),
+                          icon: const Icon(Icons.done_all_outlined, size: 18),
+                          label: const Text('Marcar todas como leidas'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFF0B0F0D),
+                            padding: EdgeInsets.zero,
+                            alignment: Alignment.centerLeft,
+                          ),
                         ),
                       ),
                     ],
@@ -133,9 +157,13 @@ class _EncabezadoNotificaciones extends StatelessWidget {
 }
 
 class _ItemNotificacion extends StatelessWidget {
-  const _ItemNotificacion({required this.notificacion});
+  const _ItemNotificacion({
+    required this.notificacion,
+    required this.onMarcarComoLeida,
+  });
 
   final NotificacionInterna notificacion;
+  final VoidCallback? onMarcarComoLeida;
 
   @override
   Widget build(BuildContext context) {
@@ -182,19 +210,28 @@ class _ItemNotificacion extends StatelessWidget {
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 3),
-                Text(
-                  notificacion.leida
-                      ? _formatearFecha(notificacion.fecha)
-                      : 'Marcar como leida',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: notificacion.leida
-                        ? Colors.grey[700]
-                        : Colors.green[800],
-                    fontWeight: notificacion.leida
-                        ? FontWeight.w400
-                        : FontWeight.w700,
+                if (notificacion.leida)
+                  Text(
+                    _formatearFecha(notificacion.fecha),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: Colors.grey[700]),
+                  )
+                else
+                  TextButton(
+                    onPressed: onMarcarComoLeida,
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.green[800],
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(0, 24),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      alignment: Alignment.centerLeft,
+                    ),
+                    child: const Text(
+                      'Marcar como leida',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
                   ),
-                ),
               ],
             ),
           ),

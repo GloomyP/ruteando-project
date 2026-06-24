@@ -40,7 +40,10 @@ class InventarioService {
   Stream<List<ProductoInventario>> obtenerAlertasStock() {
     return observarProductos().map((productos) {
       return productos
-          .where((producto) => producto.stockActual <= producto.stockMinimo)
+          .where(
+            (producto) =>
+                producto.stockActual <= ProductoInventario.limiteStockBajo,
+          )
           .toList(growable: false);
     });
   }
@@ -143,7 +146,7 @@ class InventarioService {
     await _guardarProducto(
       producto.copyWith(
         stockActual: nuevoStock,
-        estado: _estadoParaStock(nuevoStock, producto.stockMinimo),
+        estado: _estadoParaStock(nuevoStock),
         actualizadoEn: DateTime.now(),
       ),
     );
@@ -193,7 +196,7 @@ class InventarioService {
       await _guardarProducto(
         producto.copyWith(
           stockActual: nuevoStock,
-          estado: _estadoParaStock(nuevoStock, producto.stockMinimo),
+          estado: _estadoParaStock(nuevoStock),
           actualizadoEn: DateTime.now(),
         ),
       );
@@ -292,12 +295,12 @@ class InventarioService {
     return stockActual;
   }
 
-  String _estadoParaStock(int stockActual, int stockMinimo) {
+  String _estadoParaStock(int stockActual) {
     if (stockActual == 0) {
       return 'No disponible';
     }
 
-    if (stockActual <= stockMinimo) {
+    if (stockActual <= ProductoInventario.limiteStockBajo) {
       return 'Stock bajo';
     }
 

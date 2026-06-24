@@ -1362,7 +1362,11 @@ class _ResumenInventario extends StatelessWidget {
       (total, producto) => total + producto.stockActual,
     );
     final stockBajo = productos
-        .where((producto) => producto.stockActual <= producto.stockMinimo)
+        .where(
+          (producto) =>
+              producto.stockActual > 0 &&
+              producto.stockActual <= ProductoInventario.limiteStockBajo,
+        )
         .length;
     final sinStock = productos
         .where((producto) => producto.stockActual == 0)
