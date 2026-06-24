@@ -11,6 +11,7 @@ import 'pantalla_monitoreo_entregas.dart';
 import 'pantalla_inventario.dart';
 import 'perfil_usuario.dart';
 import 'services/app_settings_service.dart';
+import 'services/inventario_service.dart';
 import 'services/notificaciones_service.dart';
 import 'services/supabase_auth_service.dart';
 import 'services/supabase_auth_compat.dart';
@@ -624,56 +625,74 @@ class PantallaPrincipal extends StatefulWidget {
 
 class _PantallaPrincipalState extends State<PantallaPrincipal> {
   late Future<Map<String, String>?> _empresaFuture;
+  late Future<_DashboardResumen> _resumenFuture;
 
   @override
   void initState() {
     super.initState();
     _empresaFuture = _cargarEmpresaVinculada();
+    _resumenFuture = _DashboardResumen.cargar(_empresaFuture);
+  }
+
+  void _abrirRutaInicio(BuildContext context, String routeName) {
+    liberarFocoPlataforma();
+    if (routeName == '/inicio') {
+      return;
+    }
+    Navigator.of(context).pushReplacementNamed(routeName);
   }
 
   void _abrirConductores(BuildContext context) {
     liberarFocoPlataforma();
     Navigator.pop(context);
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        settings: const RouteSettings(name: '/repartidores'),
-        builder: (context) => const PantallaConductores(),
-      ),
-    );
+    Navigator.of(context).pushReplacementNamed('/repartidores');
   }
 
   void _abrirRutas(BuildContext context) {
     liberarFocoPlataforma();
     Navigator.pop(context);
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        settings: const RouteSettings(name: '/rutas'),
-        builder: (context) => const PantallaRuta(),
-      ),
-    );
+    Navigator.of(context).pushReplacementNamed('/rutas');
   }
 
   Future<void> _abrirRegistroEmpresa(BuildContext context) async {
     liberarFocoPlataforma();
     Navigator.pop(context);
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        settings: const RouteSettings(name: '/empresa'),
-        builder: (context) => const PantallaRegistroEmpresa(),
-      ),
-    );
-
-    if (!mounted) {
-      return;
-    }
-
-    setState(() {
-      _empresaFuture = _cargarEmpresaVinculada();
-    });
+    await Navigator.of(context).pushReplacementNamed('/empresa');
   }
 
   @override
   Widget build(BuildContext context) {
+    final esLayoutAmplio = MediaQuery.sizeOf(context).width >= 760;
+    final anchoPantalla = MediaQuery.sizeOf(context).width;
+    final anchoSidebar = (anchoPantalla * 0.21).clamp(230.0, 286.0);
+    final contenido = _InicioDashboardContent(
+      empresaFuture: _empresaFuture,
+      resumenFuture: _resumenFuture,
+      onAbrirRuta: (routeName) => _abrirRutaInicio(context, routeName),
+    );
+
+    if (esLayoutAmplio) {
+      return Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Row(
+          children: [
+            _InicioSidebar(
+              width: anchoSidebar,
+              onAbrirRuta: (routeName) => _abrirRutaInicio(context, routeName),
+            ),
+            Expanded(
+              child: Column(
+                children: [
+                  _InicioTopBar(actions: _accionesAdmin(context)),
+                  Expanded(child: contenido),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Scaffold(
       onDrawerChanged: (isOpened) {
         if (isOpened) {
@@ -835,6 +854,696 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
   }
 }
 
+class _DashboardResumen {
+  const _DashboardResumen({
+    required this.rutasActivas,
+    required this.entregasEnCurso,
+    required this.repartidoresActivos,
+    required this.productosEnInventario,
+    required this.empresasVinculadas,
+  });
+
+  final int rutasActivas;
+  final int entregasEnCurso;
+  final int repartidoresActivos;
+  final int productosEnInventario;
+  final int empresasVinculadas;
+
+  static Future<_DashboardResumen> cargar(
+    Future<Map<String, String>?> empresaFuture,
+  ) async {
+    var rutasActivas = 0;
+    var entregasEnCurso = 0;
+    var repartidoresActivos = 0;
+    var productosEnInventario = 0;
+    var empresasVinculadas = 0;
+
+    try {
+      final asignaciones = await cargarAsignacionesGlobales();
+      rutasActivas = asignaciones.length;
+      entregasEnCurso = asignaciones.where((asignacion) {
+        final estado = asignacion['estadoRecorrido']
+            ?.toString()
+            .toLowerCase()
+            .trim();
+        return estado == null ||
+            estado.isEmpty ||
+            (!estado.contains('complet') && !estado.contains('entreg'));
+      }).length;
+    } catch (error) {
+      debugPrint('No se pudo cargar resumen de rutas: $error');
+    }
+
+    try {
+      repartidoresActivos = (await cargarRepartidoresAsignables()).length;
+    } catch (error) {
+      debugPrint('No se pudo cargar resumen de repartidores: $error');
+    }
+
+    try {
+      final productos = await InventarioService().listarProductos();
+      productosEnInventario = productos.fold<int>(
+        0,
+        (total, producto) => total + producto.stockActual,
+      );
+    } catch (error) {
+      debugPrint('No se pudo cargar resumen de inventario: $error');
+    }
+
+    try {
+      final empresas = await supabaseRest.select('empresas');
+      empresasVinculadas = empresas.isNotEmpty
+          ? empresas.length
+          : (await empresaFuture) == null
+          ? 0
+          : 1;
+    } catch (error) {
+      debugPrint('No se pudo cargar resumen de empresas: $error');
+    }
+
+    return _DashboardResumen(
+      rutasActivas: rutasActivas,
+      entregasEnCurso: entregasEnCurso,
+      repartidoresActivos: repartidoresActivos,
+      productosEnInventario: productosEnInventario,
+      empresasVinculadas: empresasVinculadas,
+    );
+  }
+}
+
+class _InicioTopBar extends StatelessWidget {
+  const _InicioTopBar({required this.actions});
+
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 58,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFF236E2B), Color(0xFF2E8B34)],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x26000000),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Text(
+            'Ruteando',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const Spacer(),
+          ...actions,
+        ],
+      ),
+    );
+  }
+}
+
+class _InicioSidebar extends StatelessWidget {
+  const _InicioSidebar({required this.onAbrirRuta, required this.width});
+
+  final ValueChanged<String> onAbrirRuta;
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    final nombre = nombreUsuarioActual();
+    return Container(
+      width: width,
+      padding: const EdgeInsets.fromLTRB(10, 14, 10, 14),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF121A16), Color(0xFF0B100D)],
+        ),
+      ),
+      child: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compacto = constraints.maxHeight < 620 || width < 255;
+            final avatarRadius = compacto ? 28.0 : 34.0;
+            final itemHeight = compacto ? 43.0 : 48.0;
+
+            return Column(
+              children: [
+                CircleAvatar(
+                  radius: avatarRadius,
+                  backgroundColor: const Color(0xFFDDF2DE),
+                  child: Icon(
+                    Icons.local_shipping,
+                    color: Colors.green[800],
+                    size: compacto ? 28 : 34,
+                  ),
+                ),
+                SizedBox(height: compacto ? 8 : 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    'Bienvenido,\n$nombre',
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: compacto ? 16 : 18,
+                      height: 1.22,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                SizedBox(height: compacto ? 5 : 8),
+                Text(
+                  'Administrador',
+                  style: TextStyle(
+                    color: const Color(0xFF8ED08F),
+                    fontSize: compacto ? 13 : 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                SizedBox(height: compacto ? 14 : 22),
+                const Divider(color: Color(0x35FFFFFF), height: 1),
+                SizedBox(height: compacto ? 8 : 12),
+                _InicioSidebarItem(
+                  icon: Icons.home_outlined,
+                  title: 'Inicio',
+                  selected: true,
+                  height: itemHeight,
+                  compacto: compacto,
+                  onTap: () => onAbrirRuta('/inicio'),
+                ),
+                _InicioSidebarItem(
+                  icon: Icons.alt_route,
+                  title: 'Rutas',
+                  height: itemHeight,
+                  compacto: compacto,
+                  onTap: () => onAbrirRuta('/rutas'),
+                ),
+                _InicioSidebarItem(
+                  icon: Icons.assignment_outlined,
+                  title: 'Asignacion de Ruta',
+                  height: itemHeight,
+                  compacto: compacto,
+                  onTap: () => onAbrirRuta('/asignacion-rutas'),
+                ),
+                _InicioSidebarItem(
+                  icon: Icons.monitor_heart_outlined,
+                  title: 'Monitoreo de Entregas',
+                  height: itemHeight,
+                  compacto: compacto,
+                  onTap: () => onAbrirRuta('/monitoreo-entregas'),
+                ),
+                _InicioSidebarItem(
+                  icon: Icons.people_alt_outlined,
+                  title: 'Repartidores',
+                  height: itemHeight,
+                  compacto: compacto,
+                  onTap: () => onAbrirRuta('/repartidores'),
+                ),
+                _InicioSidebarItem(
+                  icon: Icons.inventory_2_outlined,
+                  title: 'Inventario',
+                  height: itemHeight,
+                  compacto: compacto,
+                  onTap: () => onAbrirRuta('/inventario'),
+                ),
+                _InicioSidebarItem(
+                  icon: Icons.business_outlined,
+                  title: 'Empresas',
+                  height: itemHeight,
+                  compacto: compacto,
+                  onTap: () => onAbrirRuta('/empresa'),
+                ),
+                const Spacer(),
+                const Divider(color: Color(0x35FFFFFF), height: 1),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _InicioSidebarItem extends StatelessWidget {
+  const _InicioSidebarItem({
+    required this.icon,
+    required this.title,
+    required this.onTap,
+    required this.height,
+    required this.compacto,
+    this.selected = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final VoidCallback onTap;
+  final double height;
+  final bool compacto;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Material(
+        color: selected ? const Color(0xFF236E2B) : Colors.transparent,
+        borderRadius: BorderRadius.circular(6),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(6),
+          child: Container(
+            height: height,
+            padding: EdgeInsets.symmetric(horizontal: compacto ? 14 : 18),
+            child: Row(
+              children: [
+                Icon(icon, color: Colors.white, size: compacto ? 20 : 23),
+                SizedBox(width: compacto ? 12 : 16),
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: compacto ? 14 : 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InicioDashboardContent extends StatelessWidget {
+  const _InicioDashboardContent({
+    required this.empresaFuture,
+    required this.resumenFuture,
+    required this.onAbrirRuta,
+  });
+
+  final Future<Map<String, String>?> empresaFuture;
+  final Future<_DashboardResumen> resumenFuture;
+  final ValueChanged<String> onAbrirRuta;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final ancho = constraints.maxWidth;
+        final alto = constraints.maxHeight;
+        final esCompacto = ancho < 720;
+        final esEscritorio = MediaQuery.sizeOf(context).width >= 760;
+
+        if (esEscritorio && alto.isFinite) {
+          final altoTarjetas = alto < 520
+              ? 126.0
+              : alto < 650
+              ? 150.0
+              : 168.0;
+          final altoHero = alto - altoTarjetas;
+
+          return Column(
+            children: [
+              _InicioHero(
+                empresaFuture: empresaFuture,
+                esCompacto: esCompacto,
+                altura: altoHero,
+              ),
+              SizedBox(
+                height: altoTarjetas,
+                child: _InicioAccesosRapidos(
+                  resumenFuture: resumenFuture,
+                  onAbrirRuta: onAbrirRuta,
+                  compacto: alto < 650,
+                ),
+              ),
+            ],
+          );
+        }
+
+        return SingleChildScrollView(
+          child: Column(
+            children: [
+              _InicioHero(
+                empresaFuture: empresaFuture,
+                esCompacto: esCompacto,
+              ),
+              _InicioAccesosRapidos(
+                resumenFuture: resumenFuture,
+                onAbrirRuta: onAbrirRuta,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _InicioHero extends StatelessWidget {
+  const _InicioHero({
+    required this.empresaFuture,
+    required this.esCompacto,
+    this.altura,
+  });
+
+  final Future<Map<String, String>?> empresaFuture;
+  final bool esCompacto;
+  final double? altura;
+
+  @override
+  Widget build(BuildContext context) {
+    final alto = altura ?? (esCompacto ? 560.0 : 645.0);
+    final heroPequeno = alto < 380;
+
+    return SizedBox(
+      height: alto,
+      width: double.infinity,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final altoReal = constraints.maxHeight;
+          final pequeno = heroPequeno || altoReal < 380;
+          final tituloTop = (altoReal * (pequeno ? 0.07 : 0.12))
+              .clamp(18.0, 70.0)
+              .toDouble();
+          final minimoCard = tituloTop + (pequeno ? 112.0 : 138.0);
+          final maximoCard = altoReal - (pequeno ? 126.0 : 150.0);
+          final deseadoCard = altoReal * (pequeno ? 0.48 : 0.52);
+          final cardTop = maximoCard > minimoCard
+              ? deseadoCard.clamp(minimoCard, maximoCard).toDouble()
+              : maximoCard.clamp(112.0, altoReal).toDouble();
+
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.asset(
+                'imagenes/monitoreo-entregas.png',
+                fit: BoxFit.cover,
+                alignment: Alignment.center,
+              ),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.white.withValues(alpha: 0.28),
+                      Colors.white.withValues(alpha: 0.02),
+                      Colors.white.withValues(alpha: 0.18),
+                    ],
+                  ),
+                ),
+              ),
+              Positioned(
+                top: esCompacto ? 40 : tituloTop,
+                left: 24,
+                right: 24,
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.local_shipping,
+                      size: pequeno ? 42 : 56,
+                      color: Colors.green[700],
+                    ),
+                    SizedBox(height: pequeno ? 6 : 10),
+                    Text(
+                      'Bienvenido a Ruteando',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: const Color(0xFF1F2933),
+                        fontSize: pequeno ? 24 : 30,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: pequeno ? 3 : 7),
+                    Text(
+                      'Gestiona tus operaciones de reparto desde aqui',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: const Color(0xFF3F4A3F),
+                        fontSize: pequeno ? 13 : 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Positioned(
+                left: esCompacto ? 18 : 24,
+                right: esCompacto ? 18 : 24,
+                top: esCompacto ? 240 : cardTop,
+                child: Center(
+                  child: FutureBuilder<Map<String, String>?>(
+                    future: empresaFuture,
+                    builder: (context, snapshot) {
+                      final empresa = snapshot.data;
+                      if (empresa == null) {
+                        return const SizedBox.shrink();
+                      }
+                      return ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: pequeno ? 420 : 450,
+                        ),
+                        child: _EmpresaVinculadaCard(empresa: empresa),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _InicioAccesosRapidos extends StatelessWidget {
+  const _InicioAccesosRapidos({
+    required this.resumenFuture,
+    required this.onAbrirRuta,
+    this.compacto = false,
+  });
+
+  final Future<_DashboardResumen> resumenFuture;
+  final ValueChanged<String> onAbrirRuta;
+  final bool compacto;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(
+        compacto ? 18 : 24,
+        compacto ? 12 : 18,
+        compacto ? 18 : 24,
+        compacto ? 12 : 18,
+      ),
+      color: const Color(0xFFF7F9F7),
+      child: FutureBuilder<_DashboardResumen>(
+        future: resumenFuture,
+        builder: (context, snapshot) {
+          final resumen =
+              snapshot.data ??
+              const _DashboardResumen(
+                rutasActivas: 0,
+                entregasEnCurso: 0,
+                repartidoresActivos: 0,
+                productosEnInventario: 0,
+                empresasVinculadas: 0,
+              );
+
+          final tarjetas = [
+            _ResumenDashboardCard(
+              icon: Icons.route_outlined,
+              titulo: 'Rutas activas',
+              valor: resumen.rutasActivas,
+              accion: 'Ver rutas',
+              onTap: () => onAbrirRuta('/rutas'),
+            ),
+            _ResumenDashboardCard(
+              icon: Icons.local_shipping,
+              titulo: 'Entregas en curso',
+              valor: resumen.entregasEnCurso,
+              accion: 'Ver monitoreo',
+              onTap: () => onAbrirRuta('/monitoreo-entregas'),
+            ),
+            _ResumenDashboardCard(
+              icon: Icons.person,
+              titulo: 'Repartidores activos',
+              valor: resumen.repartidoresActivos,
+              accion: 'Ver repartidores',
+              onTap: () => onAbrirRuta('/repartidores'),
+            ),
+            _ResumenDashboardCard(
+              icon: Icons.inventory_2_outlined,
+              titulo: 'Productos en inventario',
+              valor: resumen.productosEnInventario,
+              accion: 'Ver inventario',
+              onTap: () => onAbrirRuta('/inventario'),
+            ),
+            _ResumenDashboardCard(
+              icon: Icons.business_outlined,
+              titulo: 'Empresas vinculadas',
+              valor: resumen.empresasVinculadas,
+              accion: 'Ver empresas',
+              onTap: () => onAbrirRuta('/empresa'),
+            ),
+          ];
+
+          return SizedBox(
+            height: compacto ? 114 : 132,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var index = 0; index < tarjetas.length; index++) ...[
+                  if (index > 0) SizedBox(width: compacto ? 10 : 14),
+                  Expanded(child: tarjetas[index]),
+                ],
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ResumenDashboardCard extends StatelessWidget {
+  const _ResumenDashboardCard({
+    required this.icon,
+    required this.titulo,
+    required this.valor,
+    required this.accion,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String titulo;
+  final int valor;
+  final String accion;
+  final VoidCallback onTap;
+
+  String _formatearNumero(int numero) {
+    return numero.toString().replaceAllMapped(
+      RegExp(r'\B(?=(\d{3})+(?!\d))'),
+      (_) => '.',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      elevation: 3,
+      shadowColor: const Color(0x22000000),
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compacto = constraints.maxWidth < 180;
+            final iconSize = compacto ? 22.0 : 27.0;
+            final avatarRadius = compacto ? 22.0 : 27.0;
+
+            return Padding(
+              padding: EdgeInsets.all(compacto ? 10 : 13),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: avatarRadius,
+                        backgroundColor: const Color(0xFFDDF2DE),
+                        child: Icon(
+                          icon,
+                          color: Colors.green[800],
+                          size: iconSize,
+                        ),
+                      ),
+                      SizedBox(width: compacto ? 8 : 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              titulo,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: const Color(0xFF4B5563),
+                                fontSize: compacto ? 10 : 11,
+                                fontWeight: FontWeight.w800,
+                                height: 1.18,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              _formatearNumero(valor),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: const Color(0xFF1F2933),
+                                fontSize: compacto ? 19 : 22,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Spacer(),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          accion,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.green[800],
+                            fontSize: compacto ? 10 : 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      Icon(
+                        Icons.chevron_right,
+                        color: Colors.green[800],
+                        size: 19,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
 class _EmpresaVinculadaCard extends StatelessWidget {
   const _EmpresaVinculadaCard({required this.empresa});
 
@@ -2034,6 +2743,7 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
   Set<Polyline> _polylines = {};
   GoogleMapController? _mapController;
   bool _cargandoMapa = false;
+  bool _mapGesturesEnabled = true;
   List<LatLng> _puntosParadasMapa = [];
   LatLng? _puntoDestinoMapa;
 
@@ -2296,6 +3006,16 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
     );
   }
 
+  void _setMapGesturesEnabled(bool enabled) {
+    if (_mapGesturesEnabled == enabled || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _mapGesturesEnabled = enabled;
+    });
+  }
+
   Future<void> _abrirRutaDesdeNotificacion() async {
     final email = _driverEmail;
     await marcarNotificacionRutaLeida(email);
@@ -2496,20 +3216,25 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
           bottom: 12,
           child: SafeArea(
             top: false,
-            child: Listener(
-              behavior: HitTestBehavior.opaque,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: 320,
-                  maxHeight: MediaQuery.sizeOf(context).height * 0.82,
-                ),
-                child: Material(
-                  elevation: 10,
-                  borderRadius: BorderRadius.circular(16),
-                  color: colors.surface,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: _buildDetalleRuta(),
+            child: MouseRegion(
+              onEnter: (_) => _setMapGesturesEnabled(false),
+              onExit: (_) => _setMapGesturesEnabled(true),
+              child: Listener(
+                behavior: HitTestBehavior.opaque,
+                onPointerDown: (_) => _setMapGesturesEnabled(false),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: 320,
+                    maxHeight: MediaQuery.sizeOf(context).height * 0.82,
+                  ),
+                  child: Material(
+                    elevation: 10,
+                    borderRadius: BorderRadius.circular(16),
+                    color: colors.surface,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: _buildDetalleRuta(),
+                    ),
                   ),
                 ),
               ),
@@ -2550,6 +3275,10 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
       polylines: _polylines,
       myLocationEnabled: true,
       myLocationButtonEnabled: true,
+      scrollGesturesEnabled: _mapGesturesEnabled,
+      zoomGesturesEnabled: _mapGesturesEnabled,
+      rotateGesturesEnabled: _mapGesturesEnabled,
+      tiltGesturesEnabled: _mapGesturesEnabled,
     );
   }
 
@@ -2698,8 +3427,8 @@ class _PantallaRutaAsignadaState extends State<PantallaRutaAsignada> {
               alignment: Alignment.centerRight,
               child: FilledButton.icon(
                 onPressed: _abrirRutaDesdeNotificacion,
-                icon: const Icon(Icons.route),
-                label: const Text('Ver ruta'),
+                icon: const Icon(Icons.check_circle_outline),
+                label: const Text('Entendido'),
                 style: FilledButton.styleFrom(
                   backgroundColor: colors.primary,
                   foregroundColor: colors.onPrimary,
