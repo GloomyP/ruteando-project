@@ -172,11 +172,34 @@ Future<void> marcarContrasenaCambiada({SupabaseAuthUser? user}) async {
 
 bool puedeAdministrar(RolUsuario rol) => rol == RolUsuario.admin;
 
+String formatearNombreUsuario(String nombre) {
+  final normalizado = nombre.trim().replaceAll(RegExp(r'\s+'), ' ');
+  if (normalizado.isEmpty || normalizado.contains(' ')) {
+    return normalizado;
+  }
+
+  const sufijoRepartidor = 'repartidor';
+  final lower = normalizado.toLowerCase();
+  if (lower.endsWith(sufijoRepartidor) &&
+      lower.length > sufijoRepartidor.length) {
+    final nombreBase = normalizado.substring(
+      0,
+      normalizado.length - sufijoRepartidor.length,
+    );
+    final apellido = normalizado.substring(
+      normalizado.length - sufijoRepartidor.length,
+    );
+    return '$nombreBase $apellido';
+  }
+
+  return normalizado;
+}
+
 String nombreUsuarioActual() {
   final user = supabaseAuth.currentUser;
   final nombre = user?.displayName?.trim();
   if (nombre != null && nombre.isNotEmpty) {
-    return nombre;
+    return formatearNombreUsuario(nombre);
   }
 
   final email = user?.email.trim();

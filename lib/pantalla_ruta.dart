@@ -30,6 +30,7 @@ class PantallaRuta extends StatefulWidget {
 }
 
 class _PantallaRutaState extends State<PantallaRuta> {
+  static const int _maximoParadas = 25;
   static const List<String> _criteriosOptimizacion = [
     'Tiempo mas rapido',
     'Menor distancia',
@@ -189,6 +190,11 @@ class _PantallaRutaState extends State<PantallaRuta> {
       setState(() {
         _estado = 'Debes ingresar origen y al menos una parada.';
       });
+      return;
+    }
+
+    if (paradas.length > _maximoParadas) {
+      _mostrarErrorLimiteParadas();
       return;
     }
 
@@ -444,6 +450,11 @@ class _PantallaRutaState extends State<PantallaRuta> {
   }
 
   void _agregarParada() {
+    if (_paradaControllers.length >= _maximoParadas) {
+      _mostrarErrorLimiteParadas();
+      return;
+    }
+
     setState(() {
       final controller = TextEditingController()
         ..addListener(_onCampoRutaCambiado);
@@ -478,6 +489,22 @@ class _PantallaRutaState extends State<PantallaRuta> {
     if (teniaRutaCalculada) {
       await _generarRuta();
     }
+  }
+
+  void _mostrarErrorLimiteParadas() {
+    const mensaje =
+        'No se pueden agregar mas de 25 paradas por ruta. '
+        'Elimina una parada existente antes de agregar otra.';
+
+    setState(() {
+      _estado = mensaje;
+    });
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(content: Text(mensaje), backgroundColor: Colors.red),
+      );
   }
 
   RutaGoogle _seleccionarRuta(List<RutaGoogle> rutas) {

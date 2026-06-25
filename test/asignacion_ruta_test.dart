@@ -55,6 +55,42 @@ void main() {
     },
   );
 
+  testWidgets('PantallaRuta no permite agregar mas de 25 paradas', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'rol_usuario_local': 'admin'});
+    tester.view.physicalSize = const Size(1200, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(const MaterialApp(home: PantallaRuta()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Paradas (1)'));
+    await tester.pumpAndSettle();
+
+    final agregarParada = find.widgetWithText(OutlinedButton, 'Agregar parada');
+
+    for (var i = 1; i < 25; i++) {
+      await tester.ensureVisible(agregarParada);
+      await tester.tap(agregarParada);
+      await tester.pump();
+    }
+
+    await tester.ensureVisible(agregarParada);
+    await tester.tap(agregarParada);
+    await tester.pump();
+
+    expect(
+      find.text(
+        'No se pueden agregar mas de 25 paradas por ruta. '
+        'Elimina una parada existente antes de agregar otra.',
+      ),
+      findsWidgets,
+    );
+  });
+
   testWidgets('PantallaRuta oculta vista previa de paradas para repartidor', (
     WidgetTester tester,
   ) async {
